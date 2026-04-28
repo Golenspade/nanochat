@@ -468,7 +468,7 @@ class GPT(nn.Module):
         softcap = 15 # smoothly cap the logits to the range [-softcap, softcap]
         logits = self.lm_head(x) # (B, T, padded_vocab_size) <- very big tensor, large amount of memory
         logits = logits[..., :self.config.vocab_size] # slice to remove padding
-        logits = logits.float() # switch to fp32 for logit softcap and loss computation
+        # Compute softcap in activation dtype (bf16/fp16) to avoid materializing fp32 vocab tensor
         logits = softcap * torch.tanh(logits / softcap) # squash the logits
 
         if targets is not None:
