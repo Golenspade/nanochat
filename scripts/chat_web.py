@@ -270,10 +270,18 @@ async def generate_stream(
     assistant_end = worker.tokenizer.encode_special("<|assistant_end|>")
     bos = worker.tokenizer.get_bos_token_id()
 
-    # Accumulate tokens to properly handle multi-byte UTF-8 characters (like emojis)
-    accumulated_tokens = []
-    # Track the last complete UTF-8 string (without replacement characters)
-    last_clean_text = ""
+    # Try to use byte-level incremental decoding for tiktoken-based tokenizers
+    # This avoids O(T^2) full-decode cost by accumulating raw bytes.
+    enc = getattr(worker.tokenizer, 'enc', None)
+    use_byte_decode = enc is not None and hasattr(enc, 'decode_single_token_bytes')
+
+    if use_byte_decode:
+        byte_buffer = bytearray()
+        decoded_text = ""
+    else:
+        # Fallback: accumulate tokens and do full decode each step
+        accumulated_tokens = []
+        last_clean_text = ""
 
     for token_column, token_masks in worker.engine.generate(
         tokens,
@@ -289,19 +297,31 @@ async def generate_stream(
         if token == assistant_end or token == bos:
             break
 
-        # Append the token to sequence
-        accumulated_tokens.append(token)
-        # Decode all accumulated tokens to get proper UTF-8 handling
-        # Note that decode is a quite efficient operation, basically table lookup and string concat
-        current_text = worker.tokenizer.decode(accumulated_tokens)
-        # Only emit text if it doesn't end with a replacement character
-        # This ensures we don't emit incomplete UTF-8 sequences
-        if not current_text.endswith('�'):
-            # Extract only the new text since last clean decode
-            new_text = current_text[len(last_clean_text):]
-            if new_text:  # Only yield if there's new content
-                yield f"data: {json.dumps({'token': new_text, 'gpu': worker.gpu_id}, ensure_ascii=False)}\n\n"
-                last_clean_text = current_text
+        if use_byte_decode:
+            # Incremental byte-level decode
+            try:
+                token_bytes = enc.decode_single_token_bytes(token)
+            except KeyError:
+                # Special token or unknown ID: fall back to string decode for this token
+                token_bytes = worker.tokenizer.decode([token]).encode('utf-8')
+            byte_buffer.extend(token_bytes)
+            current_text = byte_buffer.decode('utf-8', errors='replace')
+            # Only emit text if it doesn't end with a replacement character
+            # This ensures we don't emit incomplete UTF-8 sequences
+            if not current_text.endswith('�'):
+                new_text = current_text[len(decoded_text):]
+                if new_text:  # Only yield if there's new content
+                    yield f"data: {json.dumps({'token': new_text, 'gpu': worker.gpu_id}, ensure_ascii=False)}\n\n"
+                    decoded_text = current_text
+        else:
+            # Fallback: decode all accumulated tokens to get proper UTF-8 handling
+            accumulated_tokens.append(token)
+            current_text = worker.tokenizer.decode(accumulated_tokens)
+            if not current_text.endswith('�'):
+                new_text = current_text[len(last_clean_text):]
+                if new_text:
+                    yield f"data: {json.dumps({'token': new_text, 'gpu': worker.gpu_id}, ensure_ascii=False)}\n\n"
+                    last_clean_text = current_text
 
     yield f"data: {json.dumps({'done': True})}\n\n"
 
