@@ -94,15 +94,17 @@ class Worker:
 class WorkerPool:
     """Pool of workers, each with a model replica on a different GPU."""
 
-    def __init__(self, num_gpus: Optional[int] = None):
+    def __init__(self, num_gpus: Optional[int] = None, queue_timeout: float = 30.0):
         if num_gpus is None:
             if device_type == "cuda":
                 num_gpus = torch.cuda.device_count()
             else:
                 num_gpus = 1 # e.g. cpu|mps
         self.num_gpus = num_gpus
+        self.queue_timeout = queue_timeout
         self.workers: List[Worker] = []
-        self.available_workers: asyncio.Queue = asyncio.Queue()
+        # Bounded queue: maxsize = num_gpus means backpressure when all workers are busy
+        self.available_workers: asyncio.Queue = asyncio.Queue(maxsize=num_gpus)
 
     async def initialize(self, source: str, model_tag: Optional[str] = None, step: Optional[int] = None):
         """Load model on each GPU."""
@@ -132,9 +134,10 @@ class WorkerPool:
 
         print(f"All {self.num_gpus} workers initialized!")
 
-    async def acquire_worker(self) -> Worker:
-        """Get an available worker from the pool."""
-        return await self.available_workers.get()
+    async def acquire_worker(self, timeout: Optional[float] = None) -> Worker:
+        """Get an available worker from the pool. Raises asyncio.TimeoutError if no worker available."""
+        timeout = timeout if timeout is not None else self.queue_timeout
+        return await asyncio.wait_for(self.available_workers.get(), timeout=timeout)
 
     async def release_worker(self, worker: Worker):
         """Return a worker to the pool."""
@@ -317,7 +320,13 @@ async def chat_completions(request: ChatRequest):
 
     # Acquire a worker from the pool (will wait if all are busy)
     worker_pool = app.state.worker_pool
-    worker = await worker_pool.acquire_worker()
+    try:
+        worker = await worker_pool.acquire_worker()
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail="Server is at capacity. All workers are busy. Please retry later."
+        )
 
     try:
         # Build conversation tokens
@@ -377,11 +386,20 @@ async def chat_completions(request: ChatRequest):
 async def health():
     """Health check endpoint."""
     worker_pool = getattr(app.state, 'worker_pool', None)
+    if worker_pool is not None:
+        available = worker_pool.available_workers.qsize()
+        total = len(worker_pool.workers)
+        busy = total - available
+    else:
+        available = total = busy = 0
     return {
         "status": "ok",
-        "ready": worker_pool is not None and len(worker_pool.workers) > 0,
-        "num_gpus": worker_pool.num_gpus if worker_pool else 0,
-        "available_workers": worker_pool.available_workers.qsize() if worker_pool else 0
+        "ready": total > 0,
+        "num_gpus": total,
+        "available_workers": available,
+        "busy_workers": busy,
+        "queue_capacity": total,
+        "queue_full": busy >= total and total > 0,
     }
 
 @app.get("/stats")
