@@ -96,8 +96,10 @@ class KVCache:
         self.n_heads = num_heads
         self.head_dim = head_dim
         # Pre-allocate cache tensors: (n_layers, B, T, H, D)
-        self.k_cache = torch.zeros(num_layers, batch_size, seq_len, num_heads, head_dim, device=device, dtype=dtype)
-        self.v_cache = torch.zeros(num_layers, batch_size, seq_len, num_heads, head_dim, device=device, dtype=dtype)
+        # Use torch.empty() instead of torch.zeros() to avoid zero-fill overhead.
+        # Cache is written before read (by flash_attn_with_kvcache or SDPA fallback).
+        self.k_cache = torch.empty(num_layers, batch_size, seq_len, num_heads, head_dim, device=device, dtype=dtype)
+        self.v_cache = torch.empty(num_layers, batch_size, seq_len, num_heads, head_dim, device=device, dtype=dtype)
         # Current sequence length per batch element (FA3 needs int32)
         self.cache_seqlens = torch.zeros(batch_size, dtype=torch.int32, device=device)
         # Previous token's normalized embedding for smear (set by model forward pass)
