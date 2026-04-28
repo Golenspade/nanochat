@@ -89,17 +89,27 @@ class KVCache:
     - Position tracked per batch element via cache_seqlens tensor
     """
 
-    def __init__(self, batch_size, num_heads, seq_len, head_dim, num_layers, device, dtype):
+    def __init__(self, batch_size, num_heads, seq_len, head_dim, num_layers, device, dtype, layout=None):
         self.batch_size = batch_size
         self.max_seq_len = seq_len
         self.n_layers = num_layers
         self.n_heads = num_heads
         self.head_dim = head_dim
-        # Pre-allocate cache tensors: (n_layers, B, T, H, D)
+        # layout: "bthd" = (B, T, H, D) for FA3, "bhtd" = (B, H, T, D) for SDPA
+        if layout is None:
+            from nanochat.flash_attention import USE_FA3
+            self.layout = "bthd" if USE_FA3 else "bhtd"
+        else:
+            self.layout = layout
+        # Pre-allocate cache tensors
         # Use torch.empty() instead of torch.zeros() to avoid zero-fill overhead.
         # Cache is written before read (by flash_attn_with_kvcache or SDPA fallback).
-        self.k_cache = torch.empty(num_layers, batch_size, seq_len, num_heads, head_dim, device=device, dtype=dtype)
-        self.v_cache = torch.empty(num_layers, batch_size, seq_len, num_heads, head_dim, device=device, dtype=dtype)
+        if self.layout == "bhtd":
+            self.k_cache = torch.empty(num_layers, batch_size, num_heads, seq_len, head_dim, device=device, dtype=dtype)
+            self.v_cache = torch.empty(num_layers, batch_size, num_heads, seq_len, head_dim, device=device, dtype=dtype)
+        else:
+            self.k_cache = torch.empty(num_layers, batch_size, seq_len, num_heads, head_dim, device=device, dtype=dtype)
+            self.v_cache = torch.empty(num_layers, batch_size, seq_len, num_heads, head_dim, device=device, dtype=dtype)
         # Current sequence length per batch element (FA3 needs int32)
         self.cache_seqlens = torch.zeros(batch_size, dtype=torch.int32, device=device)
         # Previous token's normalized embedding for smear (set by model forward pass)
@@ -131,8 +141,12 @@ class KVCache:
         assert self.n_layers == other.n_layers and self.n_heads == other.n_heads and self.head_dim == other.head_dim
         assert self.max_seq_len >= other.max_seq_len
         other_pos = other.get_pos()
-        self.k_cache[:, :, :other_pos, :, :] = other.k_cache[:, :, :other_pos, :, :]
-        self.v_cache[:, :, :other_pos, :, :] = other.v_cache[:, :, :other_pos, :, :]
+        if self.layout == "bhtd":
+            self.k_cache[:, :, :, :other_pos, :] = other.k_cache[:, :, :, :other_pos, :]
+            self.v_cache[:, :, :, :other_pos, :] = other.v_cache[:, :, :, :other_pos, :]
+        else:
+            self.k_cache[:, :, :other_pos, :, :] = other.k_cache[:, :, :other_pos, :, :]
+            self.v_cache[:, :, :other_pos, :, :] = other.v_cache[:, :, :other_pos, :, :]
         self.cache_seqlens.fill_(other_pos)
         # Copy smear state: expand batch=1 prev_embedding to num_samples
         if other.prev_embedding is not None:

@@ -82,77 +82,98 @@ class ByteTokenizer:
         return bytes(byte_tokens).decode("utf-8", errors="replace")
 
 def test_kv_cache_basic():
-    """Test basic KVCache functionality for FA3."""
+    """Test basic KVCache functionality for both bthd and bhtd layouts."""
     batch_size = 2
     num_heads = 3
     seq_len = 64
     head_dim = 5
     num_layers = 6
 
-    kv_cache = KVCache(
-        batch_size=batch_size,
-        num_heads=num_heads,
-        seq_len=seq_len,
-        head_dim=head_dim,
-        num_layers=num_layers,
-        device="cpu",
-        dtype=torch.float32,
-    )
+    for layout in ("bthd", "bhtd"):
+        kv_cache = KVCache(
+            batch_size=batch_size,
+            num_heads=num_heads,
+            seq_len=seq_len,
+            head_dim=head_dim,
+            num_layers=num_layers,
+            device="cpu",
+            dtype=torch.float32,
+            layout=layout,
+        )
 
-    # Check initial state
-    assert kv_cache.get_pos() == 0
-    assert kv_cache.k_cache.shape == (num_layers, batch_size, seq_len, num_heads, head_dim)
-    assert kv_cache.v_cache.shape == (num_layers, batch_size, seq_len, num_heads, head_dim)
+        # Check initial state
+        assert kv_cache.get_pos() == 0
+        if layout == "bhtd":
+            assert kv_cache.k_cache.shape == (num_layers, batch_size, num_heads, seq_len, head_dim)
+            assert kv_cache.v_cache.shape == (num_layers, batch_size, num_heads, seq_len, head_dim)
+        else:
+            assert kv_cache.k_cache.shape == (num_layers, batch_size, seq_len, num_heads, head_dim)
+            assert kv_cache.v_cache.shape == (num_layers, batch_size, seq_len, num_heads, head_dim)
 
-    # Test advance
-    kv_cache.advance(10)
-    assert kv_cache.get_pos() == 10
+        # Test advance
+        kv_cache.advance(10)
+        assert kv_cache.get_pos() == 10
 
-    kv_cache.advance(5)
-    assert kv_cache.get_pos() == 15
+        kv_cache.advance(5)
+        assert kv_cache.get_pos() == 15
 
-    # Test reset
-    kv_cache.reset()
-    assert kv_cache.get_pos() == 0
+        # Test reset
+        kv_cache.reset()
+        assert kv_cache.get_pos() == 0
 
-    # Test get_layer_cache returns correct views
-    k_layer0, v_layer0 = kv_cache.get_layer_cache(0)
-    assert k_layer0.shape == (batch_size, seq_len, num_heads, head_dim)
-    assert v_layer0.shape == (batch_size, seq_len, num_heads, head_dim)
+        # Test get_layer_cache returns correct views
+        k_layer0, v_layer0 = kv_cache.get_layer_cache(0)
+        if layout == "bhtd":
+            assert k_layer0.shape == (batch_size, num_heads, seq_len, head_dim)
+            assert v_layer0.shape == (batch_size, num_heads, seq_len, head_dim)
+        else:
+            assert k_layer0.shape == (batch_size, seq_len, num_heads, head_dim)
+            assert v_layer0.shape == (batch_size, seq_len, num_heads, head_dim)
 
 
 def test_kv_cache_prefill():
-    """Test KVCache.prefill() copies data correctly."""
+    """Test KVCache.prefill() copies data correctly for both layouts."""
     batch_size = 1
     num_heads = 4
     head_dim = 8
     num_layers = 2
 
-    # Create source cache and advance it
-    src_cache = KVCache(
-        batch_size=batch_size, num_heads=num_heads, seq_len=32,
-        head_dim=head_dim, num_layers=num_layers, device="cpu", dtype=torch.float32,
-    )
-    # Write some data to source cache
-    src_cache.k_cache[0, 0, :16, :, :] = 1.0
-    src_cache.v_cache[0, 0, :16, :, :] = 2.0
-    src_cache.advance(16)
+    for layout in ("bthd", "bhtd"):
+        # Create source cache and advance it
+        src_cache = KVCache(
+            batch_size=batch_size, num_heads=num_heads, seq_len=32,
+            head_dim=head_dim, num_layers=num_layers, device="cpu", dtype=torch.float32,
+            layout=layout,
+        )
+        # Write some data to source cache
+        if layout == "bhtd":
+            src_cache.k_cache[0, :, :16, :] = 1.0
+            src_cache.v_cache[0, :, :16, :] = 2.0
+        else:
+            src_cache.k_cache[0, 0, :16, :, :] = 1.0
+            src_cache.v_cache[0, 0, :16, :, :] = 2.0
+        src_cache.advance(16)
 
-    # Create destination cache with larger seq_len
-    dst_cache = KVCache(
-        batch_size=batch_size, num_heads=num_heads, seq_len=64,
-        head_dim=head_dim, num_layers=num_layers, device="cpu", dtype=torch.float32,
-    )
+        # Create destination cache with larger seq_len
+        dst_cache = KVCache(
+            batch_size=batch_size, num_heads=num_heads, seq_len=64,
+            head_dim=head_dim, num_layers=num_layers, device="cpu", dtype=torch.float32,
+            layout=layout,
+        )
 
-    # Prefill
-    dst_cache.prefill(src_cache)
+        # Prefill
+        dst_cache.prefill(src_cache)
 
-    # Check position was copied
-    assert dst_cache.get_pos() == 16
+        # Check position was copied
+        assert dst_cache.get_pos() == 16
 
-    # Check data was copied
-    assert (dst_cache.k_cache[0, 0, :16, :, :] == 1.0).all()
-    assert (dst_cache.v_cache[0, 0, :16, :, :] == 2.0).all()
+        # Check data was copied
+        if layout == "bhtd":
+            assert (dst_cache.k_cache[0, :, :16, :] == 1.0).all()
+            assert (dst_cache.v_cache[0, :, :16, :] == 2.0).all()
+        else:
+            assert (dst_cache.k_cache[0, 0, :16, :, :] == 1.0).all()
+            assert (dst_cache.v_cache[0, 0, :16, :, :] == 2.0).all()
 
 
 def test_multi_sample_first_token_diversity():
