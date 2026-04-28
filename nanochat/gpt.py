@@ -483,7 +483,7 @@ class GPT(nn.Module):
     @torch.inference_mode()
     def generate(self, tokens, max_tokens, temperature=1.0, top_k=None, seed=42):
         """
-        Naive autoregressive streaming inference.
+        Autoregressive streaming inference with KV cache.
         To make it super simple, let's assume:
         - batch size is 1
         - ids and the yielded tokens are simple Python lists and ints
@@ -494,10 +494,29 @@ class GPT(nn.Module):
         if temperature > 0:
             rng = torch.Generator(device=device)
             rng.manual_seed(seed)
-        ids = torch.tensor([tokens], dtype=torch.long, device=device) # add batch dim
+
+        # Local import to avoid circular dependency (engine imports checkpoint_manager which imports gpt)
+        from nanochat.engine import KVCache
+
+        # Determine dtype for KV cache (same heuristic as Engine.generate)
+        dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
+
+        # Create KV cache and prefill with prompt tokens
+        m = self.config
+        kv_cache = KVCache(
+            batch_size=1,
+            num_heads=m.n_kv_head,
+            seq_len=len(tokens) + max_tokens,
+            head_dim=m.n_embd // m.n_head,
+            num_layers=m.n_layer,
+            device=device,
+            dtype=dtype,
+        )
+        ids = torch.tensor([tokens], dtype=torch.long, device=device)
+        logits = self.forward(ids, kv_cache=kv_cache)  # prefill
+        logits = logits[:, -1, :]  # (B, vocab_size)
+
         for _ in range(max_tokens):
-            logits = self.forward(ids) # (B, T, vocab_size)
-            logits = logits[:, -1, :] # (B, vocab_size)
             if top_k is not None and top_k > 0:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('Inf')
@@ -507,6 +526,9 @@ class GPT(nn.Module):
                 next_ids = torch.multinomial(probs, num_samples=1, generator=rng)
             else:
                 next_ids = torch.argmax(logits, dim=-1, keepdim=True)
-            ids = torch.cat((ids, next_ids), dim=1)
             token = next_ids.item()
             yield token
+
+            # Decode next token using KV cache (single token forward)
+            ids = next_ids
+            logits = self.forward(ids, kv_cache=kv_cache)[:, -1, :]
