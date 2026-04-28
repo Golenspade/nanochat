@@ -67,6 +67,7 @@ parser.add_argument("--scalar-lr", type=float, default=0.5, help="learning rate 
 parser.add_argument("--warmup-steps", type=int, default=40, help="number of steps for LR warmup")
 parser.add_argument("--warmdown-ratio", type=float, default=0.65, help="ratio of iterations for LR warmdown")
 parser.add_argument("--final-lr-frac", type=float, default=0.05, help="final LR as fraction of initial LR")
+parser.add_argument("--cooldown-beta2-max", type=float, default=0.0, help="max beta_2 for AdamW during cooldown (0.0=disabled, 0.99=enable). Only affects AdamW groups.")
 parser.add_argument("--resume-from-step", type=int, default=-1, help="resume training from this step (-1 = disable)")
 # Evaluation
 parser.add_argument("--eval-every", type=int, default=250, help="evaluate val bpb every N steps (-1 = disable)")
@@ -385,6 +386,24 @@ def get_muon_momentum(it):
 def get_weight_decay(it):
     return weight_decay_scaled * 0.5 * (1 + math.cos(math.pi * it / num_iterations))
 
+# Cooldown beta_2 scheduler for AdamW (gradually increase beta_2 during cooldown)
+# Store original beta_2 values per AdamW group for interpolation
+adamw_beta2_base = {}
+if args.cooldown_beta2_max > 0.0:
+    for i, group in enumerate(optimizer.param_groups):
+        if group['kind'] == 'adamw':
+            adamw_beta2_base[i] = group['betas'][1]
+
+def get_cooldown_beta2(it):
+    if args.cooldown_beta2_max <= 0.0 or not adamw_beta2_base:
+        return None
+    warmdown_iters = round(args.warmdown_ratio * num_iterations)
+    warmdown_start = num_iterations - warmdown_iters
+    if it < warmdown_start:
+        return None
+    cooldown_frac = (it - warmdown_start) / warmdown_iters
+    return {i: base + (args.cooldown_beta2_max - base) * cooldown_frac for i, base in adamw_beta2_base.items()}
+
 # -----------------------------------------------------------------------------
 # Training loop
 
@@ -520,11 +539,14 @@ while True:
     lrm = get_lr_multiplier(step)
     muon_momentum = get_muon_momentum(step)
     muon_weight_decay = get_weight_decay(step)
-    for group in optimizer.param_groups:
+    cooldown_beta2_map = get_cooldown_beta2(step)
+    for i, group in enumerate(optimizer.param_groups):
         group["lr"] = group["initial_lr"] * lrm
         if group['kind'] == 'muon':
             group["momentum"] = muon_momentum
             group["weight_decay"] = muon_weight_decay
+        elif group['kind'] == 'adamw' and cooldown_beta2_map is not None:
+            group["betas"] = (group["betas"][0], cooldown_beta2_map[i])
     if scaler is not None:
         scaler.unscale_(optimizer)
         # In distributed training, all ranks must agree on whether to skip the step.
