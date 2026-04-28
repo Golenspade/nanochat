@@ -147,8 +147,8 @@ def test_kv_cache_prefill():
         )
         # Write some data to source cache
         if layout == "bhtd":
-            src_cache.k_cache[0, :, :16, :] = 1.0
-            src_cache.v_cache[0, :, :16, :] = 2.0
+            src_cache.k_cache[0, 0, :, :16, :] = 1.0
+            src_cache.v_cache[0, 0, :, :16, :] = 2.0
         else:
             src_cache.k_cache[0, 0, :16, :, :] = 1.0
             src_cache.v_cache[0, 0, :16, :, :] = 2.0
@@ -169,8 +169,8 @@ def test_kv_cache_prefill():
 
         # Check data was copied
         if layout == "bhtd":
-            assert (dst_cache.k_cache[0, :, :16, :] == 1.0).all()
-            assert (dst_cache.v_cache[0, :, :16, :] == 2.0).all()
+            assert (dst_cache.k_cache[0, 0, :, :16, :] == 1.0).all()
+            assert (dst_cache.v_cache[0, 0, :, :16, :] == 2.0).all()
         else:
             assert (dst_cache.k_cache[0, 0, :16, :, :] == 1.0).all()
             assert (dst_cache.v_cache[0, 0, :16, :, :] == 2.0).all()
