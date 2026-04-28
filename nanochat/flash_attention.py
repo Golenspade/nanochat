@@ -158,8 +158,15 @@ def flash_attn_with_kvcache(q, k_cache, v_cache, k=None, v=None, cache_seqlens=N
 
     # Detect cache layout from shape: (B, T, H, D) = bthd, (B, H, T, D) = bhtd
     # q is (B, T_new, H, D). k_cache is either (B, T_max, H_kv, D) or (B, H_kv, T_max, D).
-    # In bhtd layout, dim1 == H_kv (small) and dim2 == T_max (large).
-    is_bhtd = k_cache.dim() == 4 and k_cache.size(1) < k_cache.size(2)
+    # In bhtd layout, dim1 == H_kv and dim2 == T_max.
+    # In bthd layout, dim1 == T_max and dim2 == H_kv.
+    # We distinguish by checking whether dim2 matches D (head_dim) => bhtd if dim3 == D.
+    # Actually: bhtd = (B, H_kv, T_max, D), bthd = (B, T_max, H_kv, D).
+    # So in both cases, the last dim is D. We check if dim2 or dim3 is D... both are.
+    # Robust heuristic: compare dim1 vs dim2. For all practical configs T_max != H_kv.
+    # Also verify last dim is D to catch unexpected shapes.
+    assert k_cache.dim() == 4 and k_cache.size(-1) == D, f"Unexpected k_cache shape {k_cache.shape}, expected last dim {D}"
+    is_bhtd = k_cache.size(1) < k_cache.size(2)
 
     # Insert new k, v into cache (in-place, matching FA3 behavior)
     if k is not None and v is not None:

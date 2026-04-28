@@ -140,6 +140,7 @@ class KVCache:
         assert self.get_pos() == 0, "Cannot prefill a non-empty KV cache"
         assert self.n_layers == other.n_layers and self.n_heads == other.n_heads and self.head_dim == other.head_dim
         assert self.max_seq_len >= other.max_seq_len
+        assert self.layout == other.layout, f"Layout mismatch: {self.layout} vs {other.layout}"
         other_pos = other.get_pos()
         if self.layout == "bhtd":
             self.k_cache[:, :, :, :other_pos, :] = other.k_cache[:, :, :, :other_pos, :]
