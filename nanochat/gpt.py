@@ -127,6 +127,18 @@ class CausalSelfAttention(nn.Module):
         return y
 
 
+class ReLUSquare(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x):
+        y = F.relu(x)
+        ctx.save_for_backward(y)
+        return y * y
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        y, = ctx.saved_tensors
+        return 2 * y * grad_output * (y > 0)
+
 class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -135,7 +147,7 @@ class MLP(nn.Module):
 
     def forward(self, x):
         x = self.c_fc(x)
-        x = F.relu(x).square()
+        x = ReLUSquare.apply(x)
         x = self.c_proj(x)
         return x
 
