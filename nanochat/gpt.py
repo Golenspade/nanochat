@@ -324,6 +324,42 @@ class GPT(nn.Module):
         window_sizes[-1] = (long_window, 0)
         return window_sizes
 
+    def expand_vocab(self, new_vocab_size):
+        """Expand embedding and lm_head to new_vocab_size, keeping old weights."""
+        old_vocab_size = self.transformer.wte.num_embeddings
+        if new_vocab_size <= old_vocab_size:
+            return
+        # Determine how many new tokens to add
+        n_new = new_vocab_size - old_vocab_size
+        # Expand wte
+        old_wte = self.transformer.wte.weight.data
+        new_wte = torch.empty(n_new, self.config.n_embd, dtype=old_wte.dtype, device=old_wte.device)
+        torch.nn.init.normal_(new_wte, mean=0.0, std=0.8)
+        self.transformer.wte = nn.Embedding(new_vocab_size, self.config.n_embd)
+        self.transformer.wte.weight.data[:old_vocab_size] = old_wte
+        self.transformer.wte.weight.data[old_vocab_size:] = new_wte
+        if COMPUTE_DTYPE != torch.float16:
+            self.transformer.wte.to(dtype=COMPUTE_DTYPE)
+        # Expand lm_head
+        old_lm_head = self.lm_head.weight.data
+        new_lm_head = torch.empty(n_new, self.config.n_embd, dtype=old_lm_head.dtype, device=old_lm_head.device)
+        torch.nn.init.normal_(new_lm_head, mean=0.0, std=0.001)
+        self.lm_head = Linear(self.config.n_embd, new_vocab_size, bias=False)
+        self.lm_head.weight.data[:old_vocab_size] = old_lm_head
+        self.lm_head.weight.data[old_vocab_size:] = new_lm_head
+        # Expand value_embeds
+        for key, ve in self.value_embeds.items():
+            old_ve = ve.weight.data
+            new_ve = torch.empty(n_new, self.config.n_embd // self.config.n_head * self.config.n_kv_head, dtype=old_ve.dtype, device=old_ve.device)
+            torch.nn.init.uniform_(new_ve, -3**0.5 * self.config.n_embd**-0.5, 3**0.5 * self.config.n_embd**-0.5)
+            self.value_embeds[key] = nn.Embedding(new_vocab_size, self.config.n_embd // self.config.n_head * self.config.n_kv_head)
+            self.value_embeds[key].weight.data[:old_vocab_size] = old_ve
+            self.value_embeds[key].weight.data[old_vocab_size:] = new_ve
+            if COMPUTE_DTYPE != torch.float16:
+                self.value_embeds[key].to(dtype=COMPUTE_DTYPE)
+        # Update config vocab_size
+        self.config.vocab_size = new_vocab_size
+
     def get_device(self):
         return self.transformer.wte.weight.device
 

@@ -94,6 +94,24 @@ def build_model(checkpoint_dir, step, device, phase):
     model_data = {k.removeprefix("_orig_mod."): v for k, v in model_data.items()}
     model_config_kwargs = meta_data["model_config"]
     _patch_missing_config_keys(model_config_kwargs)
+
+    # Load the Tokenizer before building model so we can detect vocab mismatch
+    tokenizer = get_tokenizer()
+    tokenizer_vocab_size = tokenizer.get_vocab_size()
+    checkpoint_vocab_size = model_config_kwargs["vocab_size"]
+
+    # Handle vocab size mismatch: support warm-start expansion
+    vocab_expanded = False
+    if tokenizer_vocab_size > checkpoint_vocab_size:
+        log0(f"Tokenizer vocab ({tokenizer_vocab_size}) > checkpoint vocab ({checkpoint_vocab_size}): expanding model embeddings")
+        model_config_kwargs["vocab_size"] = tokenizer_vocab_size
+        vocab_expanded = True
+    elif tokenizer_vocab_size < checkpoint_vocab_size:
+        raise ValueError(
+            f"Tokenizer vocab size ({tokenizer_vocab_size}) is smaller than model vocab size ({checkpoint_vocab_size}). "
+            f"Shrinking vocab is not supported."
+        )
+
     log0(f"Building model with config: {model_config_kwargs}")
     model_config = GPTConfig(**model_config_kwargs)
     _patch_missing_keys(model_data, model_config)
@@ -102,16 +120,45 @@ def build_model(checkpoint_dir, step, device, phase):
     # Load the model state
     model.to_empty(device=device)
     model.init_weights() # note: this is dumb, but we need to init the rotary embeddings. TODO: fix model re-init
-    model.load_state_dict(model_data, strict=True, assign=True)
+
+    if vocab_expanded:
+        # Load old weights for overlapping tokens, new embeddings stay as init_weights() produced them
+        new_state = model.state_dict()
+        filtered_old_state = {}
+        for k, v in model_data.items():
+            if k in new_state and new_state[k].shape == v.shape:
+                filtered_old_state[k] = v
+            elif k in new_state:
+                # Shape mismatch on embedding layers: copy overlapping portion
+                if "transformer.wte.weight" in k:
+                    old_n = v.shape[0]
+                    new_state[k][:old_n].copy_(v)
+                    log0(f"Expanded wte: copied {old_n} tokens, initialized {new_state[k].shape[0] - old_n} new tokens")
+                elif "lm_head.weight" in k:
+                    old_n = v.shape[0]
+                    new_state[k][:old_n].copy_(v)
+                    log0(f"Expanded lm_head: copied {old_n} tokens, initialized {new_state[k].shape[0] - old_n} new tokens")
+                elif "value_embeds" in k and ".weight" in k:
+                    old_n = v.shape[0]
+                    new_state[k][:old_n].copy_(v)
+                    log0(f"Expanded {k}: copied {old_n} tokens, initialized {new_state[k].shape[0] - old_n} new tokens")
+                else:
+                    log0(f"Skipping {k}: shape mismatch {v.shape} vs {new_state[k].shape}")
+        model.load_state_dict(filtered_old_state, strict=False, assign=True)
+        n_loaded = checkpoint_vocab_size
+        n_init = tokenizer_vocab_size - checkpoint_vocab_size
+        log0(f"Vocab expansion complete: {n_loaded} tokens loaded from checkpoint, {n_init} new tokens randomly initialized")
+        # Update meta_data to reflect new vocab size
+        meta_data["model_config"]["vocab_size"] = tokenizer_vocab_size
+    else:
+        model.load_state_dict(model_data, strict=True, assign=True)
+
     # Put the model in the right training phase / mode
     if phase == "eval":
         model.eval()
     else:
         model.train()
-    # Load the Tokenizer
-    tokenizer = get_tokenizer()
-    # Sanity check: compatibility between model and tokenizer
-    assert tokenizer.get_vocab_size() == model_config_kwargs["vocab_size"], f"Tokenizer vocab size {tokenizer.get_vocab_size()} does not match model config vocab size {model_config_kwargs['vocab_size']}"
+
     return model, tokenizer, meta_data
 
 
