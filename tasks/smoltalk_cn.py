@@ -18,8 +18,9 @@ class SmolTalkCN(Task):
             test_size = int(len(ds) * 0.05)
             self.ds = ds.select(range(test_size))
         else:
-            train_size = int(len(ds) * 0.95)
-            self.ds = ds.select(range(train_size, len(ds)))
+            # Train gets the remaining 95%
+            test_size = int(len(ds) * 0.05)
+            self.ds = ds.select(range(test_size, len(ds)))
         self.length = len(self.ds)
 
     def num_examples(self):
