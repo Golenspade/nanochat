@@ -6,7 +6,7 @@ import os
 import time
 import argparse
 import torch
-from nanochat.tokenizer import RustBPETokenizer
+from nanochat.tokenizer import RustBPETokenizer, SPLIT_PATTERN, SPLIT_PATTERN_CN
 from nanochat.common import get_base_dir
 from nanochat.dataset import parquets_iter_batched
 
@@ -17,10 +17,15 @@ parser = argparse.ArgumentParser(description='Train a BPE tokenizer')
 parser.add_argument('--max-chars', type=int, default=2_000_000_000, help='Maximum characters to train on (default: 2B)')
 parser.add_argument('--doc-cap', type=int, default=10_000, help='Maximum characters per document (default: 10,000)')
 parser.add_argument('--vocab-size', type=int, default=32768, help='Vocabulary size (default: 32768 = 2^15)')
+parser.add_argument('--pattern', type=str, default='en', choices=['en', 'cn'], help='Tokenizer split pattern: en=English, cn=Chinese-aware (default: en)')
 args = parser.parse_args()
 print(f"max_chars: {args.max_chars:,}")
 print(f"doc_cap: {args.doc_cap:,}")
 print(f"vocab_size: {args.vocab_size:,}")
+print(f"pattern: {args.pattern}")
+
+# Select the split pattern
+pattern = SPLIT_PATTERN_CN if args.pattern == 'cn' else SPLIT_PATTERN
 
 # -----------------------------------------------------------------------------
 # Text iterator
@@ -46,7 +51,7 @@ text_iter = text_iterator()
 # -----------------------------------------------------------------------------
 # Train the tokenizer
 t0 = time.time()
-tokenizer = RustBPETokenizer.train_from_iterator(text_iter, args.vocab_size)
+tokenizer = RustBPETokenizer.train_from_iterator(text_iter, args.vocab_size, pattern=pattern)
 t1 = time.time()
 train_time = t1 - t0
 print(f"Training time: {train_time:.2f}s")
@@ -90,6 +95,13 @@ with open(token_bytes_path, "wb") as f:
     torch.save(token_bytes, f)
 print(f"Saved token_bytes to {token_bytes_path}")
 
+# -----------------------------------------------------------------------------
+# Chinese compression ratio test (only meaningful when pattern=cn, but always run)
+test_cn = "你好世界，深度学习正在改变人工智能的未来。"
+tokens_cn = tokenizer.encode(test_cn)
+ratio = len(tokens_cn) / len(test_cn)
+print(f"Chinese compression: chars={len(test_cn)}, tokens={len(tokens_cn)}, ratio={ratio:.2f}")
+
 # Log to report
 from nanochat.report import get_report
 token_bytes_nonzero = (token_bytes[token_bytes > 0]).to(dtype=torch.float32)
@@ -102,5 +114,6 @@ get_report().log(section="Tokenizer training", data=[
         "token_bytes_max": int(token_bytes_nonzero.max().item()),
         "token_bytes_mean": token_bytes_nonzero.mean().item(),
         "token_bytes_std": token_bytes_nonzero.std().item(),
-    }
+    },
+    {"chinese_compression_ratio": ratio},
 ])
