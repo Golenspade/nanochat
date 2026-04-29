@@ -32,7 +32,7 @@ SPLIT_PATTERN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,2}| 
 # Chinese-aware split pattern: adds contiguous CJK characters as a single pretokenization unit.
 # Uses the Unicode range 一-鿿 which covers the most common Chinese characters.
 # rustbpe uses the regex crate which supports \u{XXXX} syntax.
-SPLIT_PATTERN_CN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,2}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+|\u{4e00}-\u{9fff}+"""
+SPLIT_PATTERN_CN = r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+[\p{L}\u{4e00}-\u{9fff}]+|\p{N}{1,2}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
 
 # -----------------------------------------------------------------------------
 # Generic GPT-4-style tokenizer based on HuggingFace Tokenizer

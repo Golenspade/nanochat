@@ -28,8 +28,11 @@ class SmolTalkCN(Task):
 
     def get_example(self, index):
         row = self.ds[index]
+        instruction = row["instruction"]
+        if row.get("input"):
+            instruction = instruction + "\n" + row["input"]
         messages = [
-            {"role": "user", "content": row["instruction"]},
+            {"role": "user", "content": instruction},
             {"role": "assistant", "content": row["output"]}
         ]
         # ---------------------------------------------------------------------

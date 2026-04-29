@@ -129,7 +129,7 @@ def run_cn_eval(task_name, model, tokenizer, engine,
                 batch_size=1, num_samples=1, max_new_tokens=512, temperature=0.0, top_k=50,
                 max_problems=None):
     task_module = {
-        'CEval': partial(CEval, split="test"),
+        'CEval': partial(CEval, split="val"),
         'GSM8K-CN': partial(GSM8KCN, subset="main", split="test"),
     }[task_name]
     task_object = task_module()

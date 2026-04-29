@@ -130,18 +130,18 @@ def build_model(checkpoint_dir, step, device, phase):
                 filtered_old_state[k] = v
             elif k in new_state:
                 # Shape mismatch on embedding layers: copy overlapping portion
-                if "transformer.wte.weight" in k:
-                    old_n = v.shape[0]
-                    new_state[k][:old_n].copy_(v)
-                    log0(f"Expanded wte: copied {old_n} tokens, initialized {new_state[k].shape[0] - old_n} new tokens")
-                elif "lm_head.weight" in k:
-                    old_n = v.shape[0]
-                    new_state[k][:old_n].copy_(v)
-                    log0(f"Expanded lm_head: copied {old_n} tokens, initialized {new_state[k].shape[0] - old_n} new tokens")
-                elif "value_embeds" in k and ".weight" in k:
-                    old_n = v.shape[0]
-                    new_state[k][:old_n].copy_(v)
-                    log0(f"Expanded {k}: copied {old_n} tokens, initialized {new_state[k].shape[0] - old_n} new tokens")
+                # Special token IDs shift when vocab expands, so copy mergeable and special regions separately
+                num_special = len(tokenizer.get_special_tokens())
+                old_mergeable = checkpoint_vocab_size - num_special
+                new_mergeable = tokenizer_vocab_size - num_special
+                if "transformer.wte.weight" in k or "lm_head.weight" in k or ("value_embeds" in k and ".weight" in k):
+                    # mergeable tokens: same IDs in both tokenizers, direct index copy
+                    new_state[k][:old_mergeable].copy_(v[:old_mergeable])
+                    # special tokens: remap by position in SPECIAL_TOKENS list
+                    for i in range(num_special):
+                        new_state[k][new_mergeable + i].copy_(v[old_mergeable + i])
+                    n_new = new_mergeable - old_mergeable
+                    log0(f"Expanded {k.split('.')[-2] if 'transformer' in k else k}: copied {old_mergeable} mergeable + {num_special} special, initialized {n_new} new tokens")
                 else:
                     log0(f"Skipping {k}: shape mismatch {v.shape} vs {new_state[k].shape}")
         model.load_state_dict(filtered_old_state, strict=False, assign=True)

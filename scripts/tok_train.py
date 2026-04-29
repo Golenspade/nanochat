@@ -37,7 +37,8 @@ def text_iterator():
     3) Break when we've seen args.max_chars characters
     """
     nchars = 0
-    for batch in parquets_iter_batched(split="train"):
+    cn_ratio = 0.5 if args.pattern == 'cn' else 0.0
+    for batch in parquets_iter_batched(split="train", cn_ratio=cn_ratio):
         for doc in batch:
             doc_text = doc
             if len(doc_text) > args.doc_cap:
