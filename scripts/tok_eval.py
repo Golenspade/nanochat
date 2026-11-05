@@ -143,6 +143,10 @@ science_text = r"""
 Photosynthesis is a photochemical energy transduction process in which light-harvesting pigment–protein complexes within the thylakoid membranes of oxygenic phototrophs absorb photons and initiate charge separation at the reaction center, driving the linear electron transport chain from water to NADP⁺ via photosystem II, the cytochrome b₆f complex, and photosystem I, concomitantly generating a trans-thylakoid proton motive force utilized by chloroplastic ATP synthase. The light-dependent reactions produce ATP and NADPH, which fuel the Calvin–Benson–Bassham cycle in the stroma, wherein ribulose-1,5-bisphosphate is carboxylated by ribulose-1,5-bisphosphate carboxylase/oxygenase (RuBisCO) to form 3-phosphoglycerate, subsequently reduced and regenerated through a series of enzymatic steps, enabling net assimilation of CO₂ into triose phosphates and ultimately carbohydrates. This process is tightly regulated by photoprotective mechanisms, redox feedback, and metabolite flux, representing a central biochemical pathway coupling solar energy capture to the biosphere’s primary productivity.
 """.strip()
 
+chinese_text = r"""
+人工智能正在改变软件开发、科学研究和日常办公的方式。一个好的语言模型不仅需要理解英文资料，也需要稳定处理中文问题、长句、数字、标点和混合中英术语。例如，研究人员可能会问：“请解释 Transformer 中注意力机制的计算复杂度，并给出一个直观例子。” 如果分词器对中文压缩率太差，同样长度的中文内容会占用更多上下文窗口，也会降低训练效率。
+""".strip()
+
 # The tokenizer was trained on data from earlier shards, so it has seen this data
 train_docs = next(parquets_iter_batched(split="train"))
 train_text = "\n".join(train_docs)
@@ -155,6 +159,7 @@ all_text = [
     ("code", code_text),
     ("math", math_text),
     ("science", science_text),
+    ("chinese", chinese_text),
     ("fwe-train", train_text),
 ]
 if val_text:

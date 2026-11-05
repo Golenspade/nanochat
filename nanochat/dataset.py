@@ -44,12 +44,23 @@ def _load_skypile_streaming(split="train"):
     return ds
 
 
-def skypile_iter_batched(split="train", batch_size=128):
+def _shard_streaming_dataset(ds, start=0, step=1):
+    """Shard an iterable dataset across DDP ranks, with a generic stride fallback."""
+    if step <= 1:
+        return ds
+    try:
+        return ds.shard(num_shards=step, index=start)
+    except (AttributeError, NotImplementedError):
+        return (example for i, example in enumerate(ds) if i % step == start)
+
+
+def skypile_iter_batched(split="train", batch_size=128, start=0, step=1):
     """
     Iterate through SkyPile-150B in batches of text documents.
     Uses HuggingFace datasets streaming (on-demand download).
+    start/step shard the stream across DDP ranks.
     """
-    ds = _load_skypile_streaming(split)
+    ds = _shard_streaming_dataset(_load_skypile_streaming(split), start=start, step=step)
     batch = []
     for example in ds:
         text = example.get("text", "")
@@ -126,7 +137,7 @@ def parquets_iter_batched(split, start=0, step=1, cn_ratio=0.0):
 
     if use_cn:
         en_iter = _english_iter(parquet_paths, start, step)
-        cn_iter = skypile_iter_batched(split="train", batch_size=128)
+        cn_iter = skypile_iter_batched(split="train", batch_size=128, start=start, step=step)
         yield from _interleave_iters(en_iter, cn_iter, cn_ratio)
     else:
         for filepath in parquet_paths:

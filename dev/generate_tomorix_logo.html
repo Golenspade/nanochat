@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Tomorix Logo Generator</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    h1 {
+      color: #1e3c72;
+      margin: 0 0 20px 0;
+      text-align: center;
+    }
+    .controls {
+      margin: 20px 0;
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .control {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    label {
+      font-size: 12px;
+      color: #666;
+      font-weight: 600;
+    }
+    input[type="range"] {
+      width: 150px;
+    }
+    input[type="color"] {
+      width: 60px;
+      height: 30px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button {
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform 0.2s;
+    }
+    button:hover {
+      transform: scale(1.05);
+    }
+    .info {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f0f4ff;
+      border-radius: 10px;
+      font-size: 14px;
+      color: #333;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🌟 Tomorix Logo Generator</h1>
+    
+    <svg id="logo" width="500" height="500" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <!-- 蓝黄渐变 -->
+        <linearGradient id="blueYellow" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#0066ff;stop-opacity:1"/>
+          <stop offset="50%" style="stop-color:#00ccff;stop-opacity:1"/>
+          <stop offset="100%" style="stop-color:#ffdd00;stop-opacity:1"/>
+        </linearGradient>
+        
+        <!-- 黄蓝渐变（反向）-->
+        <linearGradient id="yellowBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#ffdd00;stop-opacity:1"/>
+          <stop offset="50%" style="stop-color:#00ccff;stop-opacity:1"/>
+          <stop offset="100%" style="stop-color:#0066ff;stop-opacity:1"/>
+        </linearGradient>
+        
+        <!-- 发光效果 -->
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <feMerge>
+            <feMergeNode in="coloredBlur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+    </svg>
+    
+    <div class="controls">
+      <div class="control">
+        <label>外圈半径: <span id="radiusValue">140</span></label>
+        <input type="range" id="radius" min="80" max="200" value="140">
+      </div>
+      <div class="control">
+        <label>内圈偏移: <span id="innerOffsetValue">100</span></label>
+        <input type="range" id="innerOffset" min="50" max="150" value="100">
+      </div>
+      <div class="control">
+        <label>光芒数量: <span id="numLinesValue">16</span></label>
+        <input type="range" id="numLines" min="8" max="32" value="16" step="2">
+      </div>
+      <div class="control">
+        <label>线条粗细: <span id="strokeWidthValue">8</span></label>
+        <input type="range" id="strokeWidth" min="2" max="15" value="8">
+      </div>
+      <div class="control">
+        <label>旋转角度: <span id="rotationValue">0</span>°</label>
+        <input type="range" id="rotation" min="0" max="360" value="0">
+      </div>
+    </div>
+    
+    <div class="controls">
+      <button onclick="saveSVG()">💾 下载 SVG</button>
+      <button onclick="copyToClipboard()">📋 复制代码</button>
+      <button onclick="resetDefaults()">🔄 重置默认</button>
+    </div>
+    
+    <div class="info">
+      💡 调整参数实时预览效果，满意后点击"下载 SVG"保存
+    </div>
+  </div>
+
+  <script>
+    const svg = document.getElementById('logo');
+    const center = 250; // SVG中心点
+    
+    // 获取控制器
+    const radiusInput = document.getElementById('radius');
+    const innerOffsetInput = document.getElementById('innerOffset');
+    const numLinesInput = document.getElementById('numLines');
+    const strokeWidthInput = document.getElementById('strokeWidth');
+    const rotationInput = document.getElementById('rotation');
+    
+    // 更新显示值
+    function updateValues() {
+      document.getElementById('radiusValue').textContent = radiusInput.value;
+      document.getElementById('innerOffsetValue').textContent = innerOffsetInput.value;
+      document.getElementById('numLinesValue').textContent = numLinesInput.value;
+      document.getElementById('strokeWidthValue').textContent = strokeWidthInput.value;
+      document.getElementById('rotationValue').textContent = rotationInput.value;
+    }
+    
+    // 生成logo
+    function generateLogo() {
+      const r = parseInt(radiusInput.value);
+      const innerOffset = parseInt(innerOffsetInput.value);
+      const numLines = parseInt(numLinesInput.value);
+      const strokeWidth = parseInt(strokeWidthInput.value);
+      const rotation = parseInt(rotationInput.value);
+      
+      // 清空现有内容（保留defs）
+      const defs = svg.querySelector('defs');
+      svg.innerHTML = '';
+      svg.appendChild(defs);
+      
+      // 创建旋转组
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('transform', `rotate(${rotation} ${center} ${center})`);
+      
+      // 绘制光芒线条（交替使用两种渐变）
+      let pathBlue = '';  // 蓝到黄的线
+      let pathYellow = ''; // 黄到蓝的线
+      
+      for(let i = 0; i < numLines * 2; i += 2) {
+        const a1 = i * Math.PI / numLines;
+        const a2 = (i + 1) * Math.PI / numLines;
+        
+        const x2 = center + Math.cos(a2) * r;
+        const y2 = center + Math.sin(a2) * r;
+        const x3 = center + Math.cos(a2) * (r - innerOffset);
+        const y3 = center + Math.sin(a2) * (r - innerOffset);
+        
+        // 交替分配到不同的渐变
+        if (i % 4 === 0) {
+          pathBlue += `M${x2},${y2} L${x3},${y3} `;
+        } else {
+          pathYellow += `M${x2},${y2} L${x3},${y3} `;
+        }
+      }
+      
+      // 添加蓝到黄的路径
+      if (pathBlue) {
+        const pathElem1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pathElem1.setAttribute('d', pathBlue);
+        pathElem1.setAttribute('stroke', 'url(#blueYellow)');
+        pathElem1.setAttribute('stroke-width', strokeWidth);
+        pathElem1.setAttribute('stroke-linecap', 'round');
+        pathElem1.setAttribute('fill', 'none');
+        pathElem1.setAttribute('filter', 'url(#glow)');
+        g.appendChild(pathElem1);
+      }
+      
+      // 添加黄到蓝的路径
+      if (pathYellow) {
+        const pathElem2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pathElem2.setAttribute('d', pathYellow);
+        pathElem2.setAttribute('stroke', 'url(#yellowBlue)');
+        pathElem2.setAttribute('stroke-width', strokeWidth);
+        pathElem2.setAttribute('stroke-linecap', 'round');
+        pathElem2.setAttribute('fill', 'none');
+        pathElem2.setAttribute('filter', 'url(#glow)');
+        g.appendChild(pathElem2);
+      }
+      
+      svg.appendChild(g);
+      
+      // 添加中心的"T"字标志（代表Tomorix）
+      const tGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      tGroup.setAttribute('transform', `translate(${center}, ${center})`);
+      
+      // T字的横杠
+      const topBar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      topBar.setAttribute('x', -25);
+      topBar.setAttribute('y', -30);
+      topBar.setAttribute('width', 50);
+      topBar.setAttribute('height', 8);
+      topBar.setAttribute('fill', 'url(#blueYellow)');
+      topBar.setAttribute('rx', 4);
+      tGroup.appendChild(topBar);
+      
+      // T字的竖杠
+      const stem = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      stem.setAttribute('x', -6);
+      stem.setAttribute('y', -30);
+      stem.setAttribute('width', 12);
+      stem.setAttribute('height', 60);
+      stem.setAttribute('fill', 'url(#yellowBlue)');
+      stem.setAttribute('rx', 6);
+      tGroup.appendChild(stem);
+      
+      // 添加一个圆形底座
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('cx', 0);
+      circle.setAttribute('cy', 0);
+      circle.setAttribute('r', 45);
+      circle.setAttribute('fill', 'none');
+      circle.setAttribute('stroke', 'url(#blueYellow)');
+      circle.setAttribute('stroke-width', 3);
+      circle.setAttribute('opacity', 0.5);
+      tGroup.appendChild(circle);
+      
+      svg.appendChild(tGroup);
+      
+      updateValues();
+    }
+    
+    // 保存SVG
+    function saveSVG() {
+      const svgData = svg.outerHTML;
+      const blob = new Blob([svgData], {type: 'image/svg+xml'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'tomorix_logo.svg';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    
+    // 复制到剪贴板
+    function copyToClipboard() {
+      const svgData = svg.outerHTML;
+      navigator.clipboard.writeText(svgData).then(() => {
+        alert('✅ SVG 代码已复制到剪贴板！');
+      });
+    }
+    
+    // 重置默认值
+    function resetDefaults() {
+      radiusInput.value = 140;
+      innerOffsetInput.value = 100;
+      numLinesInput.value = 16;
+      strokeWidthInput.value = 8;
+      rotationInput.value = 0;
+      generateLogo();
+    }
+    
+    // 监听所有控制器的变化
+    [radiusInput, innerOffsetInput, numLinesInput, strokeWidthInput, rotationInput].forEach(input => {
+      input.addEventListener('input', generateLogo);
+    });
+    
+    // 初始化
+    generateLogo();
+  </script>
+</body>
+</html>

@@ -213,11 +213,14 @@ EXPECTED_FILES = [
     "base-model-evaluation.md",
     "chat-sft.md",
     "chat-evaluation-sft.md",
+    "chinese-evaluation-sft.md",
     "chat-rl.md",
     "chat-evaluation-rl.md",
+    "chinese-evaluation-rl.md",
 ]
 # the metrics we're currently interested in
 chat_metrics = ["ARC-Easy", "ARC-Challenge", "MMLU", "GSM8K", "HumanEval", "ChatCORE"]
+chinese_metrics = ["CEval", "GSM8K-CN", "Chinese ChatCORE"]
 
 def extract(section, keys):
     """simple def to extract a single key from a section"""
@@ -316,8 +319,12 @@ class Report:
                     final_metrics["base"] = extract(section, "CORE")
                 if file_name == "chat-evaluation-sft.md":
                     final_metrics["sft"] = extract(section, chat_metrics)
+                if file_name == "chinese-evaluation-sft.md":
+                    final_metrics["chinese-sft"] = extract(section, chinese_metrics)
                 if file_name == "chat-evaluation-rl.md":
                     final_metrics["rl"] = extract(section, "GSM8K") # RL only evals GSM8K
+                if file_name == "chinese-evaluation-rl.md":
+                    final_metrics["chinese-rl"] = extract(section, chinese_metrics)
                 # append this section of the report
                 out_file.write(section)
                 out_file.write("\n")
@@ -333,7 +340,7 @@ class Report:
             # Custom ordering: CORE first, ChatCORE last, rest in middle
             all_metrics = sorted(all_metrics, key=lambda x: (x != "CORE", x == "ChatCORE", x))
             # Fixed column widths
-            stages = ["base", "sft", "rl"]
+            stages = ["base", "sft", "chinese-sft", "rl", "chinese-rl"]
             metric_width = 15
             value_width = 8
             # Write table header

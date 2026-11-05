@@ -20,9 +20,9 @@ import torch
 import pyarrow.parquet as pq
 
 from nanochat.common import get_dist_info
-from nanochat.dataset import list_parquet_files
+from nanochat.dataset import list_parquet_files, skypile_iter_batched, _interleave_iters
 
-def _document_batches(split, resume_state_dict, tokenizer_batch_size):
+def _english_document_batches(split, resume_state_dict, tokenizer_batch_size):
     """
     Infinite iterator over document batches (list of text strings) from parquet files.
 
@@ -71,11 +71,47 @@ def _document_batches(split, resume_state_dict, tokenizer_batch_size):
         epoch += 1
 
 
+def _document_batches(split, resume_state_dict, tokenizer_batch_size, cn_ratio=0.0):
+    """
+    Infinite iterator over document batches, optionally mixing SkyPile Chinese data.
+
+    The state dict tracks the English parquet stream only. Chinese data is streamed
+    from HuggingFace and intentionally restarts on resume.
+    """
+    assert 0.0 <= cn_ratio <= 1.0, "cn_ratio must be in [0.0, 1.0]"
+    ddp, ddp_rank, ddp_local_rank, ddp_world_size = get_dist_info()
+    en_batches = _english_document_batches(split, resume_state_dict, tokenizer_batch_size)
+    use_cn = (cn_ratio > 0.0) and (split == "train")
+    if not use_cn:
+        yield from en_batches
+        return
+
+    if resume_state_dict is not None and ddp_rank == 0:
+        print("WARNING: --cn-ratio uses SkyPile streaming; Chinese stream restarts on resume while English parquet state is restored.")
+
+    cn_batches = (
+        (batch, None)
+        for batch in skypile_iter_batched(
+            split="train",
+            batch_size=tokenizer_batch_size,
+            start=ddp_rank,
+            step=ddp_world_size,
+        )
+    )
+    last_en_state = resume_state_dict if resume_state_dict is not None else {"pq_idx": 0, "rg_idx": 0, "epoch": 1}
+    for batch, state in _interleave_iters(en_batches, cn_batches, cn_ratio):
+        if state is not None:
+            last_en_state = state
+            yield batch, state
+        else:
+            yield batch, last_en_state
+
+
 def tokenizing_distributed_data_loader_with_state_bos_bestfit(
     tokenizer, B, T, split,
     tokenizer_threads=4, tokenizer_batch_size=128,
     device="cuda", resume_state_dict=None,
-    buffer_size=1000
+    buffer_size=1000, cn_ratio=0.0
 ):
     """
     BOS-aligned dataloader with Best-Fit Cropping.
@@ -96,7 +132,7 @@ def tokenizing_distributed_data_loader_with_state_bos_bestfit(
     assert split in ["train", "val"], "split must be 'train' or 'val'"
 
     row_capacity = T + 1
-    batches = _document_batches(split, resume_state_dict, tokenizer_batch_size)
+    batches = _document_batches(split, resume_state_dict, tokenizer_batch_size, cn_ratio=cn_ratio)
     bos_token = tokenizer.get_bos_token_id()
     doc_buffer = []
     pq_idx, rg_idx, epoch = 0, 0, 1

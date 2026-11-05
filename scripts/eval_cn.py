@@ -127,9 +127,9 @@ def run_categorical_eval(task_object, tokenizer, model, batch_size, max_problems
 
 def run_cn_eval(task_name, model, tokenizer, engine,
                 batch_size=1, num_samples=1, max_new_tokens=512, temperature=0.0, top_k=50,
-                max_problems=None):
+                max_problems=None, ceval_split="val"):
     task_module = {
-        'CEval': partial(CEval, split="val"),
+        'CEval': partial(CEval, split=ceval_split),
         'GSM8K-CN': partial(GSM8KCN, subset="main", split="test"),
     }[task_name]
     task_object = task_module()
@@ -157,6 +157,7 @@ if __name__ == "__main__":
     parser.add_argument('-g', '--model-tag', type=str, default=None, help='Model tag to load')
     parser.add_argument('-s', '--step', type=int, default=None, help='Step to load')
     parser.add_argument('-x', '--max-problems', type=int, default=None, help='Max problems to evaluate')
+    parser.add_argument('--ceval-split', type=str, default='val', choices=['val', 'test'], help='C-Eval split to evaluate (default: val)')
     parser.add_argument('--device-type', type=str, default='', choices=['cuda', 'cpu', 'mps'], help='Device type: cuda|cpu|mps. empty => autodetect')
     args = parser.parse_args()
 
@@ -187,6 +188,7 @@ if __name__ == "__main__":
             temperature=args.temperature,
             top_k=args.top_k,
             max_problems=args.max_problems,
+            ceval_split=args.ceval_split,
         )
         results[task_name] = acc
         print0(f"{task_name} accuracy: {100 * acc:.2f}%")
@@ -201,7 +203,7 @@ if __name__ == "__main__":
             centered_acc = (acc - baseline_acc) / (1.0 - baseline_acc)
             centered_mean += centered_acc
         chatcore_metric = centered_mean / len(results)
-        chatcore_metric_dict = {"ChatCORE metric": chatcore_metric}
+        chatcore_metric_dict = {"Chinese ChatCORE": chatcore_metric}
     get_report().log(section="Chinese evaluation " + args.source, data=[
         vars(args),
         results,
