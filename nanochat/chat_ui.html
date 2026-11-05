@@ -1,0 +1,2045 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>NanoChat 124M · 交互与训练控制台</title>
+    <link rel="icon" type="image/svg+xml" href="/logo.svg">
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- Highlight.js for Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+
+    <style>
+        :root {
+            --bg-canvas: #09090b;
+            --bg-surface: #121215;
+            --bg-surface-elevated: #18181b;
+            --bg-card: rgba(24, 24, 27, 0.55);
+            --border-subtle: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.18);
+            --border-active: rgba(255, 255, 255, 0.32);
+            --text-primary: #f4f4f5;
+            --text-secondary: #a1a1aa;
+            --text-tertiary: #71717a;
+            --emerald: #10b981;
+            --amber: #f59e0b;
+            --rose: #f43f5e;
+            --user-bubble: #27272a;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background-color: var(--bg-canvas);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+        }
+
+        /* Top Progress Rail */
+        .top-progress-rail {
+            width: 100%;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.04);
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 100;
+        }
+
+        .top-progress-bar {
+            height: 100%;
+            width: 39.5%;
+            background: linear-gradient(90deg, #3b82f6, #10b981, #818cf8);
+            transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+        }
+
+        /* Header */
+        header {
+            height: 58px;
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 0 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(9, 9, 11, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            z-index: 20;
+        }
+
+        .brand-group {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+        }
+
+        .brand-mark {
+            width: 28px;
+            height: 28px;
+            background: radial-gradient(circle at 30% 30%, #ffffff 0%, #71717a 100%);
+            border-radius: 7px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #09090b;
+            font-weight: 700;
+            font-size: 0.88rem;
+            letter-spacing: -0.03em;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.8);
+        }
+
+        .brand-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .spec-pill {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.68rem;
+            font-weight: 500;
+            padding: 2px 7px;
+            border-radius: 4px;
+            background: var(--bg-surface-elevated);
+            color: var(--text-tertiary);
+            border: 1px solid var(--border-subtle);
+        }
+
+        /* Controls Group */
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        /* Context Usage Indicator (Header) */
+        .context-meter-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.32rem 0.75rem;
+            background: rgba(24, 24, 27, 0.65);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .context-meter-badge:hover {
+            border-color: var(--border-hover);
+            background: var(--bg-surface-elevated);
+        }
+
+        .context-ring {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.12);
+            border-top-color: var(--emerald);
+            transform: rotate(-45deg);
+            transition: border-top-color 0.3s;
+        }
+
+        /* HUD Training Status Badge */
+        .hud-status-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            padding: 0.35rem 0.85rem;
+            background: rgba(24, 24, 27, 0.65);
+            border: 1px solid var(--border-subtle);
+            border-radius: 9999px;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            backdrop-filter: blur(12px);
+        }
+
+        .hud-status-badge:hover {
+            border-color: var(--border-hover);
+            background: var(--bg-surface-elevated);
+            color: var(--text-primary);
+        }
+
+        .beacon-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .beacon-pulse {
+            width: 7px;
+            height: 7px;
+            background-color: var(--emerald);
+            border-radius: 50%;
+        }
+
+        .beacon-ring {
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            border: 1.5px solid var(--emerald);
+            opacity: 0.8;
+            animation: beaconPing 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+
+        @keyframes beaconPing {
+            0% { transform: scale(0.6); opacity: 0.9; }
+            75%, 100% { transform: scale(1.8); opacity: 0; }
+        }
+
+        .hud-data-group {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.73rem;
+        }
+
+        .hud-sep {
+            color: var(--border-subtle);
+        }
+
+        .hud-metric-highlight {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        /* Segmented Mode Control */
+        .segmented-ctrl {
+            display: flex;
+            background: rgba(24, 24, 27, 0.85);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            padding: 2px;
+        }
+
+        .seg-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            font-weight: 500;
+            padding: 0.32rem 0.75rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .seg-btn.active {
+            background: var(--bg-surface-elevated);
+            color: var(--text-primary);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        .icon-action-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 7px;
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .icon-action-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--border-hover);
+            background: var(--bg-surface-elevated);
+        }
+
+        /* Main Workspace */
+        .main-workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            background: radial-gradient(circle at 50% 12%, rgba(39, 39, 42, 0.16) 0%, transparent 65%);
+        }
+
+        /* Chat Viewport */
+        .chat-viewport {
+            flex: 1;
+            overflow-y: auto;
+            padding: 2.25rem 1.5rem 8rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            scroll-behavior: smooth;
+        }
+
+        .chat-flow {
+            max-width: 800px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 2.25rem;
+        }
+
+        /* Hero / Introduction Card */
+        .hero-spec-card {
+            background: linear-gradient(180deg, rgba(24, 24, 27, 0.6) 0%, rgba(18, 18, 21, 0.3) 100%);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            padding: 1.75rem 2rem;
+            backdrop-filter: blur(12px);
+            margin-bottom: 0.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-spec-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 8%;
+            right: 8%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+        }
+
+        .hero-tagline {
+            font-size: 0.74rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--emerald);
+            font-weight: 600;
+            margin-bottom: 0.6rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .hero-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            letter-spacing: -0.03em;
+            color: #ffffff;
+            margin-bottom: 0.5rem;
+        }
+
+        .hero-desc {
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+
+        .phase-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.85rem;
+        }
+
+        .phase-panel {
+            background: rgba(18, 18, 21, 0.65);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 1rem 1.15rem;
+            transition: all 0.2s;
+        }
+
+        .phase-panel.active {
+            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(24, 24, 27, 0.8);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        .phase-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.45rem;
+        }
+
+        .phase-name {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .phase-pill {
+            font-size: 0.68rem;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .pill-running {
+            background: rgba(16, 185, 129, 0.12);
+            color: var(--emerald);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+        }
+
+        .pill-next {
+            background: rgba(113, 113, 122, 0.15);
+            color: var(--text-tertiary);
+            border: 1px solid var(--border-subtle);
+        }
+
+        .phase-metric-line {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            line-height: 1.45;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .chips-container {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-top: 0.5rem;
+        }
+
+        .prompt-chip {
+            background: rgba(24, 24, 27, 0.5);
+            border: 1px solid var(--border-subtle);
+            border-radius: 9999px;
+            padding: 0.35rem 0.85rem;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .prompt-chip:hover {
+            color: var(--text-primary);
+            border-color: var(--border-hover);
+            background: var(--bg-surface-elevated);
+            transform: translateY(-1px);
+        }
+
+        /* Chat Turn */
+        .chat-turn {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+            animation: turnFade 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes turnFade {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .turn-author {
+            font-size: 0.74rem;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            letter-spacing: -0.01em;
+            margin-left: 2px;
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+
+        .turn-token-badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--text-tertiary);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1px 5px;
+            border-radius: 3px;
+        }
+
+        .chat-turn.user {
+            align-items: flex-end;
+        }
+
+        .chat-turn.assistant {
+            align-items: flex-start;
+        }
+
+        .chat-bubble {
+            max-width: 90%;
+            padding: 0.85rem 1.25rem;
+            border-radius: 12px;
+            font-size: 0.92rem;
+            line-height: 1.68;
+            letter-spacing: -0.01em;
+            word-break: break-word;
+        }
+
+        .chat-turn.user .chat-bubble {
+            background: var(--user-bubble);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-bottom-right-radius: 3px;
+            white-space: pre-wrap;
+        }
+
+        .chat-turn.assistant .chat-bubble {
+            background: transparent;
+            color: var(--text-primary);
+            padding-left: 0;
+            padding-top: 0.2rem;
+            max-width: 100%;
+            width: 100%;
+        }
+
+        /* Streaming Typing Cursor */
+        .cursor-active::after {
+            content: '▋';
+            display: inline-block;
+            color: var(--emerald);
+            margin-left: 3px;
+            vertical-align: baseline;
+            animation: blink 0.8s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        /* ========================================================
+           MARKDOWN STYLING FOR ASSISTANT RESPONSES
+           ======================================================== */
+        .markdown-body {
+            font-size: 0.92rem;
+            line-height: 1.7;
+            color: var(--text-primary);
+        }
+
+        .markdown-body p {
+            margin-bottom: 0.85rem;
+        }
+
+        .markdown-body p:last-child {
+            margin-bottom: 0;
+        }
+
+        .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+            color: #ffffff;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            margin-top: 1.25rem;
+            margin-bottom: 0.6rem;
+        }
+
+        .markdown-body h1 { font-size: 1.35rem; }
+        .markdown-body h2 { font-size: 1.15rem; }
+        .markdown-body h3 { font-size: 1.02rem; }
+
+        .markdown-body ul, .markdown-body ol {
+            padding-left: 1.4rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .markdown-body li {
+            margin-bottom: 0.35rem;
+        }
+
+        .markdown-body blockquote {
+            border-left: 3px solid var(--emerald);
+            padding-left: 1rem;
+            margin: 0.85rem 0;
+            color: var(--text-secondary);
+            font-style: normal;
+            background: rgba(16, 185, 129, 0.04);
+            border-radius: 0 6px 6px 0;
+            padding-top: 0.4rem;
+            padding-bottom: 0.4rem;
+        }
+
+        .markdown-body hr {
+            border: 0;
+            height: 1px;
+            background: var(--border-subtle);
+            margin: 1.25rem 0;
+        }
+
+        .markdown-body table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.85rem 0;
+            font-size: 0.85rem;
+        }
+
+        .markdown-body th, .markdown-body td {
+            border: 1px solid var(--border-subtle);
+            padding: 0.5rem 0.85rem;
+            text-align: left;
+        }
+
+        .markdown-body th {
+            background: rgba(255, 255, 255, 0.05);
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        .markdown-body tr:nth-child(even) {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .markdown-body inline-code, .markdown-body code:not([class*="language-"]) {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+            background: rgba(255, 255, 255, 0.07);
+            color: #e4e4e7;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        /* Code Block Container with Top Bar */
+        .code-container {
+            position: relative;
+            background: #000000;
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            margin: 0.9rem 0;
+            overflow: hidden;
+        }
+
+        .code-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.4rem 0.85rem;
+            background: #141416;
+            border-bottom: 1px solid var(--border-subtle);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+        }
+
+        .copy-code-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: all 0.15s;
+        }
+
+        .copy-code-btn:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        pre {
+            background: transparent;
+            padding: 0.85rem 1rem;
+            margin: 0;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            color: #e4e4e7;
+        }
+
+        pre code {
+            background: transparent;
+            padding: 0;
+            border: none;
+        }
+
+        /* Floating Input Dock */
+        .dock-wrapper {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 1rem 1.5rem 1.5rem 1.5rem;
+            background: linear-gradient(180deg, transparent 0%, rgba(9, 9, 11, 0.7) 30%, rgba(9, 9, 11, 0.98) 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 15;
+            pointer-events: none;
+        }
+
+        .dock-box {
+            max-width: 800px;
+            width: 100%;
+            background: rgba(24, 24, 27, 0.85);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            padding: 0.65rem 0.9rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            transition: border-color 0.2s, box-shadow 0.2s;
+            pointer-events: auto;
+        }
+
+        .dock-box:focus-within {
+            border-color: rgba(255, 255, 255, 0.24);
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
+        }
+
+        .dock-textarea {
+            width: 100%;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text-primary);
+            font-size: 0.92rem;
+            line-height: 1.55;
+            resize: none;
+            max-height: 180px;
+            min-height: 42px;
+            font-family: inherit;
+        }
+
+        .dock-textarea::placeholder {
+            color: var(--text-tertiary);
+        }
+
+        .dock-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 0.25rem;
+        }
+
+        .dock-left-meta {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+        }
+
+        .dock-mode-indicator {
+            font-size: 0.72rem;
+            color: var(--text-tertiary);
+            font-family: 'JetBrains Mono', monospace;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        /* Context Usage Bar inside Dock */
+        .dock-context-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--text-tertiary);
+            background: rgba(255, 255, 255, 0.03);
+            padding: 2px 7px;
+            border-radius: 4px;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .context-bar-mini {
+            width: 48px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 2px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .context-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--emerald);
+            transition: width 0.3s, background-color 0.3s;
+        }
+
+        .dock-send-btn {
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #09090b;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .dock-send-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+            background: #f4f4f5;
+        }
+
+        .dock-send-btn:disabled {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.3);
+            cursor: not-allowed;
+        }
+
+        /* Clean Modern Modals */
+        .modal-scrim {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 150;
+        }
+
+        .modal-scrim.visible {
+            display: flex;
+        }
+
+        .modal-panel {
+            background: #141416;
+            border: 1px solid var(--border-hover);
+            border-radius: 14px;
+            width: 90%;
+            max-width: 640px;
+            padding: 1.5rem 1.75rem;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes modalPop {
+            from { opacity: 0; transform: scale(0.96); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .modal-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .modal-header-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: -0.02em;
+        }
+
+        .modal-close-icon {
+            background: transparent;
+            border: none;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 0.2rem;
+            line-height: 1;
+        }
+
+        .modal-close-icon:hover {
+            color: var(--text-primary);
+        }
+
+        .slider-row {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .slider-label-line {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+        }
+
+        .slider-val {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            background: var(--bg-surface-elevated);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #ffffff;
+            cursor: pointer;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+            transition: transform 0.1s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .terminal-viewport {
+            background: #000000;
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            padding: 0.9rem 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.74rem;
+            line-height: 1.55;
+            color: #a1a1aa;
+            max-height: 280px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        /* Slash Command Autocomplete Menu */
+        .slash-menu {
+            position: absolute;
+            bottom: calc(100% + 10px);
+            left: 0;
+            right: 0;
+            background: rgba(18, 18, 22, 0.96);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--border-active);
+            border-radius: 12px;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65);
+            padding: 6px;
+            display: none;
+            flex-direction: column;
+            gap: 2px;
+            z-index: 100;
+            max-height: 290px;
+            overflow-y: auto;
+        }
+
+        .slash-menu.visible {
+            display: flex;
+        }
+
+        .slash-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        .slash-item:hover, .slash-item.selected {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .slash-item-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .slash-cmd-tag {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            font-size: 0.8rem;
+            color: #60a5fa;
+            background: rgba(59, 130, 246, 0.12);
+            padding: 2px 7px;
+            border-radius: 5px;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .slash-desc {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+        }
+
+        .slash-hint {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--text-tertiary);
+        }
+
+        /* Auto-Compact Toggle & Badges */
+        .compact-toggle-btn {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            padding: 0.32rem 0.65rem;
+            border-radius: 8px;
+            background: rgba(24, 24, 27, 0.6);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-tertiary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            transition: all 0.2s;
+        }
+
+        .compact-toggle-btn:hover {
+            border-color: var(--border-hover);
+            color: var(--text-secondary);
+        }
+
+        .compact-toggle-btn.active {
+            background: rgba(16, 185, 129, 0.12);
+            border-color: rgba(16, 185, 129, 0.35);
+            color: var(--emerald);
+        }
+
+        /* Compact Notice in Chatflow */
+        .compact-notice-turn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 0.75rem 1.25rem;
+            margin: 1rem 0;
+            background: rgba(59, 130, 246, 0.08);
+            border: 1px dashed rgba(59, 130, 246, 0.3);
+            border-radius: 10px;
+            font-size: 0.8rem;
+            color: #93c5fd;
+            font-family: 'JetBrains Mono', monospace;
+            text-align: center;
+        }
+
+        /* Floating Toast Container */
+        .toast-container {
+            position: fixed;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 300;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        .toast-pill {
+            background: rgba(24, 24, 27, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-active);
+            color: var(--text-primary);
+            font-size: 0.82rem;
+            padding: 8px 18px;
+            border-radius: 9999px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            animation: toastPop 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes toastPop {
+            from { opacity: 0; transform: translateY(-10px) scale(0.96); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* Message Action Overlay (Copy, Info) */
+        .turn-action-bar {
+            position: absolute;
+            top: 6px;
+            right: 8px;
+            opacity: 0;
+            display: flex;
+            gap: 4px;
+            transition: opacity 0.15s ease-in-out;
+        }
+
+        .chat-turn:hover .turn-action-bar {
+            opacity: 1;
+        }
+
+        .turn-copy-btn {
+            background: rgba(24, 24, 27, 0.85);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            padding: 3px 6px;
+            color: var(--text-tertiary);
+            font-size: 0.7rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s;
+        }
+
+        .turn-copy-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--border-hover);
+            background: var(--bg-surface-elevated);
+        }
+
+        /* Stop Generation Button */
+        .dock-send-btn.btn-stop {
+            background: var(--rose) !important;
+            color: #ffffff !important;
+            border-radius: 8px;
+        }
+        .dock-send-btn.btn-stop:hover {
+            background: #e11d48 !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- Top Progress Indicator -->
+    <div class="top-progress-rail">
+        <div class="top-progress-bar" id="topProgressBar"></div>
+    </div>
+
+    <!-- Header -->
+    <header>
+        <div class="brand-group">
+            <div class="brand-mark">N</div>
+            <div class="brand-title">
+                NanoGPT <span class="spec-pill">124M 双语</span>
+            </div>
+        </div>
+
+        <div class="header-actions">
+            <!-- Auto-Compact Toggle Button -->
+            <button class="compact-toggle-btn active" id="btnAutoCompact" onclick="toggleAutoCompact()" title="点击切换自动压缩模式 (当 Context > 70% 时自动精简归纳历史)">
+                <span>⚡</span> Auto-Compact: ON
+            </button>
+
+            <!-- Manual Compact Button -->
+            <button class="icon-action-btn" onclick="doManualCompact()" title="手动压缩当前上下文 (释放 Token 空间)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+            </button>
+
+            <!-- Context Usage Badge -->
+            <div class="context-meter-badge" id="headerContextBadge" onclick="doManualCompact()" title="点击手动压缩上下文 (Max: 2048 Tokens)">
+                <div class="context-ring" id="headerContextRing"></div>
+                <span>Context: <span id="headerContextText" style="color: var(--text-primary); font-weight: 500;">0 / 2048 (0.0%)</span></span>
+            </div>
+
+            <!-- HUD Training Badge -->
+            <div class="hud-status-badge" id="hudBadge" onclick="openTerminalModal()" title="点击查看 Colab 训练监控与实时指标">
+                <div class="beacon-wrapper">
+                    <div class="beacon-ring"></div>
+                    <div class="beacon-pulse"></div>
+                </div>
+                <div class="hud-data-group">
+                    <span>A100</span>
+                    <span class="hud-sep">/</span>
+                    <span id="hudStep" class="hud-metric-highlight">Step 2180</span>
+                    <span class="hud-sep">/</span>
+                    <span id="hudLoss">Loss 3.08</span>
+                    <span class="hud-sep">/</span>
+                    <span id="hudBpb" style="color: var(--emerald);">BPB 0.936</span>
+                </div>
+            </div>
+
+            <!-- Segmented Mode Control -->
+            <div class="segmented-ctrl">
+                <button class="seg-btn active" id="btnChatMode" onclick="switchMode('chat')">对话模式</button>
+                <button class="seg-btn" id="btnCompletionMode" onclick="switchMode('completion')">续写模式</button>
+            </div>
+
+            <!-- System Prompt Button -->
+            <button class="icon-action-btn" onclick="openSystemModal()" title="设定系统角色 (System Prompt)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+            </button>
+
+            <!-- Export Chat -->
+            <button class="icon-action-btn" onclick="exportConversation()" title="导出对话记录 (.md)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+            </button>
+
+            <!-- Settings -->
+            <button class="icon-action-btn" onclick="openSettingsModal()" title="采样参数">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+            </button>
+
+            <!-- Clear -->
+            <button class="icon-action-btn" onclick="resetConversation()" title="清空对话历史 (/clear)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Workspace -->
+    <div class="main-workspace">
+        <div class="chat-viewport" id="chatViewport">
+            <div class="chat-flow" id="chatFlow">
+                <!-- Architecture Hero -->
+                <div class="hero-spec-card" id="heroCard">
+                    <div class="hero-tagline">
+                        <span>●</span> 实时训练架构 · 极简交互控制台
+                    </div>
+                    <div class="hero-title">NanoGPT 124M 双语小模型</div>
+                    <div class="hero-desc">
+                        基于双语深度定制架构，词表扩展至 49,152（含中文 Byte Fallback），支持 2048 上下文窗口、上下文智能归纳压缩、流式 Markdown 与代码高亮渲染。输入 <code style="color: #60a5fa; background: rgba(59,130,246,0.15); padding: 2px 5px; border-radius: 4px;">/</code> 可调出快捷指令菜单。
+                    </div>
+
+                    <div class="phase-grid">
+                        <div class="phase-panel active">
+                            <div class="phase-header">
+                                <span class="phase-name">Step 4 · Base 预训练 (正在进行)</span>
+                                <span class="phase-pill pill-running">ACTIVE</span>
+                            </div>
+                            <div class="phase-metric-line" id="phase1Detail">
+                                进度: 77.6% | Loss: 3.08 | BPB: 0.936
+                            </div>
+                        </div>
+
+                        <div class="phase-panel">
+                            <div class="phase-header">
+                                <span class="phase-name">Step 5 · Chat SFT 对齐 (准备就绪)</span>
+                                <span class="phase-pill pill-next">QUEUED</span>
+                            </div>
+                            <div class="phase-metric-line">
+                                预训练完成后自动进入 NanoGPT 创作者身份微调与中文对话对齐
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="chips-container" style="margin-top: 1.25rem;">
+                        <div class="prompt-chip" onclick="fillPrompt('/compact')">⚡ /compact 手动压缩上下文</div>
+                        <div class="prompt-chip" onclick="fillPrompt('/help')">📖 /help 查看斜杠指令帮助</div>
+                        <div class="prompt-chip" onclick="fillPrompt('请介绍一下你自己，你是谁，是谁训练了你？')">自我身份与创作者背景</div>
+                        <div class="prompt-chip" onclick="fillPrompt('请解释 Transformer 模型中的自注意力机制原理，并附带核心公式：')">自注意力机制原理与公式</div>
+                        <div class="prompt-chip" onclick="fillPrompt('用 Python 写一个高效的快速排序算法，附带详细注释与时间复杂度分析：')">Python 快速排序实现</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Floating Input Dock -->
+        <div class="dock-wrapper">
+            <div class="dock-box">
+                <!-- Floating Slash Command Menu -->
+                <div class="slash-menu" id="slashMenu">
+                    <div class="slash-item" data-cmd="/clear" onclick="selectSlashCmd('/clear')">
+                        <div class="slash-item-left">
+                            <span class="slash-cmd-tag">/clear</span>
+                            <span class="slash-desc">清空所有对话历史，重置上下文占用为 0</span>
+                        </div>
+                        <span class="slash-hint">↵ 执行</span>
+                    </div>
+                    <div class="slash-item" data-cmd="/compact" onclick="selectSlashCmd('/compact')">
+                        <div class="slash-item-left">
+                            <span class="slash-cmd-tag">/compact</span>
+                            <span class="slash-desc">手动执行上下文智能归纳压缩，节省 Token 槽位</span>
+                        </div>
+                        <span class="slash-hint">↵ 执行</span>
+                    </div>
+                    <div class="slash-item" data-cmd="/auto-compact" onclick="selectSlashCmd('/auto-compact')">
+                        <div class="slash-item-left">
+                            <span class="slash-cmd-tag">/auto-compact</span>
+                            <span class="slash-desc">开启/关闭上下文超限自动压缩机制 (70% 阈值)</span>
+                        </div>
+                        <span class="slash-hint">切换</span>
+                    </div>
+                    <div class="slash-item" data-cmd="/system" onclick="selectSlashCmd('/system')">
+                        <div class="slash-item-left">
+                            <span class="slash-cmd-tag">/system</span>
+                            <span class="slash-desc">查看或设定模型的系统角色提示词 (System Prompt)</span>
+                        </div>
+                        <span class="slash-hint">配置</span>
+                    </div>
+                    <div class="slash-item" data-cmd="/export" onclick="selectSlashCmd('/export')">
+                        <div class="slash-item-left">
+                            <span class="slash-cmd-tag">/export</span>
+                            <span class="slash-desc">将当前完整会话记录导出为 Markdown (.md) 文档</span>
+                        </div>
+                        <span class="slash-hint">下载</span>
+                    </div>
+                    <div class="slash-item" data-cmd="/help" onclick="selectSlashCmd('/help')">
+                        <div class="slash-item-left">
+                            <span class="slash-cmd-tag">/help</span>
+                            <span class="slash-desc">在对话区展示所有斜杠指令与操作指南</span>
+                        </div>
+                        <span class="slash-hint">查看</span>
+                    </div>
+                </div>
+
+                <textarea
+                    id="dockTextarea"
+                    class="dock-textarea"
+                    placeholder="输入提问，或键入 / 查看快捷指令（/clear, /compact, /help 等）..."
+                    rows="1"
+                    onkeydown="handleKey(event)"
+                ></textarea>
+                <div class="dock-footer">
+                    <div class="dock-left-meta">
+                        <div class="dock-mode-indicator" id="dockIndicator">
+                            <span>●</span> 对话模式 (NanoGPT SFT)
+                        </div>
+                        <div class="dock-context-indicator" id="dockContextIndicator" onclick="doManualCompact()" title="点击手动执行上下文压缩 (Max: 2048 Tokens)">
+                            <div class="context-bar-mini">
+                                <div class="context-bar-fill" id="dockContextFill"></div>
+                            </div>
+                            <span id="dockContextText">0 / 2048 (0%)</span>
+                        </div>
+                    </div>
+                    <button class="dock-send-btn" id="dockSendBtn" onclick="handleSendClick()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" id="dockSendIcon">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- System Prompt Modal -->
+    <div class="modal-scrim" id="systemModal" onclick="closeOnScrim(event, 'systemModal')">
+        <div class="modal-panel">
+            <div class="modal-header-row">
+                <div class="modal-header-title">设定系统角色 (System Prompt)</div>
+                <button class="modal-close-icon" onclick="closeSystemModal()">&times;</button>
+            </div>
+            <div style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5;">
+                在此自定义 NanoGPT 的身份或特定任务要求。留空则使用默认身份。
+            </div>
+            <textarea
+                id="systemPromptInput"
+                style="width: 100%; height: 120px; background: #000; border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); padding: 10px; font-family: inherit; font-size: 0.85rem; outline: none; resize: vertical;"
+                placeholder="例如：你是由我从零训练的 NanoGPT，回答务必严谨、专业、富有逻辑..."
+            ></textarea>
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="seg-btn" onclick="saveSystemPrompt(true)" style="background: var(--bg-surface-elevated); color: var(--text-secondary); border: 1px solid var(--border-subtle);">清空角色</button>
+                <button class="seg-btn active" onclick="saveSystemPrompt()" style="background: var(--emerald); color: #000; font-weight: 600;">保存角色</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-scrim" id="settingsModal" onclick="closeOnScrim(event, 'settingsModal')">
+        <div class="modal-panel">
+            <div class="modal-header-row">
+                <div class="modal-header-title">采样参数设置</div>
+                <button class="modal-close-icon" onclick="closeSettingsModal()">&times;</button>
+            </div>
+            <div class="slider-row">
+                <div class="slider-label-line">
+                    <span>Temperature (温度/多样性)</span>
+                    <span class="slider-val" id="dispTemp">0.8</span>
+                </div>
+                <input type="range" min="0" max="1.5" step="0.05" value="0.8" oninput="changeSetting('temp', this.value)">
+            </div>
+            <div class="slider-row">
+                <div class="slider-label-line">
+                    <span>Top-K (采样候选词数)</span>
+                    <span class="slider-val" id="dispTopK">50</span>
+                </div>
+                <input type="range" min="1" max="100" step="1" value="50" oninput="changeSetting('topK', this.value)">
+            </div>
+            <div class="slider-row">
+                <div class="slider-label-line">
+                    <span>Max Tokens (最大生成长度)</span>
+                    <span class="slider-val" id="dispMaxTokens">256</span>
+                </div>
+                <input type="range" min="32" max="1024" step="32" value="256" oninput="changeSetting('maxTokens', this.value)">
+            </div>
+        </div>
+    </div>
+
+    <!-- Terminal Modal -->
+    <div class="modal-scrim" id="terminalModal" onclick="closeOnScrim(event, 'terminalModal')">
+        <div class="modal-panel" style="max-width: 720px;">
+            <div class="modal-header-row">
+                <div class="modal-header-title">Colab A100 训练监控终端</div>
+                <button class="modal-close-icon" onclick="closeTerminalModal()">&times;</button>
+            </div>
+            <div class="terminal-viewport" id="terminalContent">正在从 Colab 远端获取实时日志...</div>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = 'chat';
+        let messages = [];
+        let systemPrompt = "";
+        let autoCompactEnabled = true;
+        let isGenerating = false;
+        let currentAbortController = null;
+        let params = { temperature: 0.8, top_k: 50, max_tokens: 256 };
+        let currentTokenCount = 0;
+        let tokenDebounceTimer = null;
+        let activeSlashIndex = -1;
+
+        const chatViewport = document.getElementById('chatViewport');
+        const chatFlow = document.getElementById('chatFlow');
+        const dockTextarea = document.getElementById('dockTextarea');
+        const dockSendBtn = document.getElementById('dockSendBtn');
+        const dockSendIcon = document.getElementById('dockSendIcon');
+        const dockIndicator = document.getElementById('dockIndicator');
+        const topProgressBar = document.getElementById('topProgressBar');
+        const headerContextText = document.getElementById('headerContextText');
+        const headerContextRing = document.getElementById('headerContextRing');
+        const dockContextText = document.getElementById('dockContextText');
+        const dockContextFill = document.getElementById('dockContextFill');
+        const slashMenu = document.getElementById('slashMenu');
+        const btnAutoCompact = document.getElementById('btnAutoCompact');
+        const toastContainer = document.getElementById('toastContainer');
+
+        // Toast Feedback Component
+        function showToast(msg, icon = '✓') {
+            const pill = document.createElement('div');
+            pill.className = 'toast-pill';
+            pill.innerHTML = `<span>${icon}</span> <span>${msg}</span>`;
+            toastContainer.appendChild(pill);
+            setTimeout(() => {
+                pill.style.opacity = '0';
+                pill.style.transform = 'translateY(-10px)';
+                pill.style.transition = 'all 0.25s ease-out';
+                setTimeout(() => pill.remove(), 260);
+            }, 2600);
+        }
+
+        // Configure marked.js with highlight.js
+        if (typeof marked !== 'undefined') {
+            const renderer = new marked.Renderer();
+            renderer.code = function(code, language) {
+                const lang = (language || 'text').toUpperCase();
+                const validLang = (typeof hljs !== 'undefined' && hljs.getLanguage(language)) ? language : 'plaintext';
+                const highlighted = typeof hljs !== 'undefined' ? hljs.highlight(code, { language: validLang }).value : code;
+                const escapedRaw = encodeURIComponent(code);
+                return `
+                <div class="code-container">
+                    <div class="code-header">
+                        <span>${lang}</span>
+                        <button class="copy-code-btn" onclick="copyCodeBlock(this, '${escapedRaw}')">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                            <span>复制</span>
+                        </button>
+                    </div>
+                    <pre><code class="hljs language-${validLang}">${highlighted}</code></pre>
+                </div>`;
+            };
+
+            marked.setOptions({
+                renderer: renderer,
+                gfm: true,
+                breaks: true,
+                pedantic: false
+            });
+        }
+
+        function copyCodeBlock(btn, encodedText) {
+            const raw = decodeURIComponent(encodedText);
+            navigator.clipboard.writeText(raw).then(() => {
+                const span = btn.querySelector('span');
+                const orig = span.textContent;
+                span.textContent = '已复制 ✓';
+                btn.style.color = '#10b981';
+                setTimeout(() => {
+                    span.textContent = orig;
+                    btn.style.color = '';
+                }, 1800);
+            });
+        }
+
+        function copyRawText(text, btn) {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('已复制发言到剪贴板', '📋');
+                if (btn) {
+                    const span = btn.querySelector('span');
+                    if (span) {
+                        const orig = span.textContent;
+                        span.textContent = '已复制';
+                        setTimeout(() => span.textContent = orig, 1500);
+                    }
+                }
+            });
+        }
+
+        // Live Context Token Counter
+        async function updateTokenCountLive(draftText = "") {
+            try {
+                const res = await fetch('/api/count_tokens', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: draftText,
+                        messages: messages
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    currentTokenCount = data.count;
+                    const pct = data.pct;
+                    const count = data.count;
+                    const maxCtx = data.max_context;
+
+                    headerContextText.textContent = `${count} / ${maxCtx} (${pct}%)`;
+                    dockContextText.textContent = `${count} / ${maxCtx} (${pct}%)`;
+                    dockContextFill.style.width = `${Math.min(100, pct)}%`;
+
+                    let color = 'var(--emerald)';
+                    if (pct > 80) color = 'var(--rose)';
+                    else if (pct > 50) color = 'var(--amber)';
+
+                    dockContextFill.style.backgroundColor = color;
+                    headerContextRing.style.borderTopColor = color;
+                }
+            } catch (e) {}
+        }
+
+        // Slash Menu Controller
+        const slashCommands = [
+            { cmd: '/clear', desc: '清空所有对话历史，重置上下文占用为 0' },
+            { cmd: '/compact', desc: '手动执行上下文智能归纳压缩，精简 Token 占用' },
+            { cmd: '/auto-compact', desc: '开启/关闭上下文超限自动压缩机制 (70% 阈值)' },
+            { cmd: '/system', desc: '设定或查看系统的角色设定 (System Prompt)' },
+            { cmd: '/export', desc: '将当前完整会话记录导出为 Markdown (.md) 文档' },
+            { cmd: '/help', desc: '在对话流中展示所有斜杠指令与操作指南' }
+        ];
+
+        function renderSlashMenu(filter = '') {
+            const filtered = slashCommands.filter(c => c.cmd.toLowerCase().startsWith(filter.toLowerCase()));
+            if (!filtered.length) {
+                slashMenu.classList.remove('visible');
+                return;
+            }
+            slashMenu.innerHTML = filtered.map((c, i) => `
+                <div class="slash-item ${i === activeSlashIndex ? 'selected' : ''}" data-cmd="${c.cmd}" onclick="selectSlashCmd('${c.cmd}')">
+                    <div class="slash-item-left">
+                        <span class="slash-cmd-tag">${c.cmd}</span>
+                        <span class="slash-desc">${c.desc}</span>
+                    </div>
+                    <span class="slash-hint">↵</span>
+                </div>
+            `).join('');
+            slashMenu.classList.add('visible');
+        }
+
+        function hideSlashMenu() {
+            slashMenu.classList.remove('visible');
+            activeSlashIndex = -1;
+        }
+
+        function selectSlashCmd(cmd) {
+            dockTextarea.value = '';
+            dockTextarea.style.height = '42px';
+            hideSlashMenu();
+            executeSlashCommand(cmd);
+        }
+
+        function executeSlashCommand(cmdStr) {
+            const parts = cmdStr.trim().split(/\s+/);
+            const cmd = parts[0].toLowerCase();
+            const arg = parts.slice(1).join(' ');
+
+            if (cmd === '/clear') {
+                resetConversation();
+                showToast('已清空对话与重置上下文', '🧹');
+            } else if (cmd === '/compact') {
+                doManualCompact();
+            } else if (cmd === '/auto-compact') {
+                toggleAutoCompact();
+            } else if (cmd === '/system') {
+                if (arg) {
+                    systemPrompt = arg;
+                    document.getElementById('systemPromptInput').value = arg;
+                    showToast(`已设置 System Prompt: "${arg.slice(0, 15)}..."`, '⚙');
+                } else {
+                    openSystemModal();
+                }
+            } else if (cmd === '/export') {
+                exportConversation();
+            } else if (cmd === '/help') {
+                printHelpMessage();
+            } else {
+                showToast(`未识别的指令: ${cmd}，输入 /help 查看支持的指令`, '❓');
+            }
+            updateTokenCountLive("");
+        }
+
+        function toggleAutoCompact() {
+            autoCompactEnabled = !autoCompactEnabled;
+            btnAutoCompact.classList.toggle('active', autoCompactEnabled);
+            btnAutoCompact.innerHTML = autoCompactEnabled ? `<span>⚡</span> Auto-Compact: ON` : `<span>⚡</span> Auto-Compact: OFF`;
+            showToast(autoCompactEnabled ? '已开启自动压缩 (阈值 > 70%)' : '已关闭自动压缩', autoCompactEnabled ? '⚡' : '⏸');
+        }
+
+        async function doManualCompact() {
+            if (isGenerating) return;
+            showToast('正在执行上下文智能压缩...', '⏳');
+            await executeCompaction(false);
+        }
+
+        async function executeCompaction(isAuto = false) {
+            try {
+                const res = await fetch('/api/compact_context', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: messages,
+                        keep_recent: 2
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (!data.compacted) {
+                        showToast(data.message, 'ℹ');
+                        return false;
+                    }
+
+                    // Update local messages
+                    messages = data.messages;
+
+                    // Re-render chat turns
+                    const existingTurns = document.querySelectorAll('.chat-turn, .compact-notice-turn');
+                    existingTurns.forEach(t => t.remove());
+
+                    // Insert compact card
+                    const compactNotice = document.createElement('div');
+                    compactNotice.className = 'compact-notice-turn';
+                    compactNotice.innerHTML = `
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                        </svg>
+                        <span>${isAuto ? '⚡ [自动触发] ' : '⚡ [手动执行] '}${data.message}（当前上下文降至 ${data.new_tokens} Tokens）</span>
+                    `;
+                    chatFlow.appendChild(compactNotice);
+
+                    // Rebuild the recent turns
+                    for (const m of messages) {
+                        if (m.content.startsWith('【系统记忆压缩')) continue;
+                        if (m.content.startsWith('已获知上述历史会话核心背景')) continue;
+                        const author = m.role === 'user' ? 'USER' : 'NANOGPT 124M';
+                        addTurn(author, m.role, m.content);
+                    }
+
+                    await updateTokenCountLive("");
+                    showToast(`上下文压缩成功！节省 ${data.saved_tokens} Tokens`, '⚡');
+                    return true;
+                }
+            } catch (err) {
+                showToast(`压缩失败: ${err.message}`, '❌');
+            }
+            return false;
+        }
+
+        function exportConversation() {
+            if (!messages.length) {
+                showToast('当前没有会话记录可导出', 'ℹ');
+                return;
+            }
+            let md = `# NanoGPT 对话转储记录\n*生成时间: ${new Date().toLocaleString()}*\n\n---\n\n`;
+            if (systemPrompt) {
+                md += `> **System Prompt**: ${systemPrompt}\n\n---\n\n`;
+            }
+            messages.forEach((m, idx) => {
+                const role = m.role === 'user' ? '👤 **User**' : '🤖 **NanoGPT**';
+                md += `### 第 ${idx + 1} 轮 · ${role}\n\n${m.content}\n\n---\n\n`;
+            });
+
+            const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `NanoGPT_Chat_${Date.now()}.md`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('会话已成功导出为 Markdown 文件', '💾');
+        }
+
+        function printHelpMessage() {
+            const helpMarkdown = `
+### 🛠️ NanoGPT 对话控制台指令指南
+
+支持以下快捷斜杠指令（在输入框中键入 \`/\` 即可弹出自动补全菜单）：
+
+| 指令 | 说明 | 触发方式 |
+| :--- | :--- | :--- |
+| \`/clear\` | **清空历史**：清空所有对话轮次，重置 Token 计数为 0 | 菜单点击或回车 |
+| \`/compact\` | **压缩上下文**：归纳早期会话要点，释放 Token 空间 | 菜单点击或回车 |
+| \`/auto-compact\` | **自动压缩开关**：当 Context > 70% (1433 Tokens) 时自动触发压缩 | 切换开/关 |
+| \`/system <prompt>\` | **系统设定**：自定义当前模型的角色设定或任务说明 | 弹窗配置或指令传参 |
+| \`/export\` | **导出记录**：将当前对话转存为标准的 Markdown (\`.md\`) 文件 | 立即下载 |
+| \`/help\` | **帮助清单**：展示本帮助指令卡片 | 查看说明 |
+
+#### ⌨️ 常用快捷键：
+- \`Enter\`：发送消息 / 执行当前高亮的斜杠指令
+- \`Shift + Enter\`：多行换行
+- \`↑ / ↓\`：在斜杠指令菜单中上下切换选择
+- \`Esc\`：关闭指令菜单或模态窗口
+`;
+            addTurn('NANOGPT 124M', 'assistant', helpMarkdown);
+        }
+
+        dockTextarea.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 180) + 'px';
+            updateSendButtonState();
+
+            const val = this.value;
+            if (val.startsWith('/')) {
+                renderSlashMenu(val);
+            } else {
+                hideSlashMenu();
+            }
+
+            clearTimeout(tokenDebounceTimer);
+            tokenDebounceTimer = setTimeout(() => {
+                updateTokenCountLive(this.value);
+            }, 300);
+        });
+
+        function handleKey(e) {
+            const isMenuVisible = slashMenu.classList.contains('visible');
+            const items = slashMenu.querySelectorAll('.slash-item');
+
+            if (isMenuVisible && items.length > 0) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    activeSlashIndex = (activeSlashIndex + 1) % items.length;
+                    renderSlashMenu(dockTextarea.value);
+                    return;
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    activeSlashIndex = (activeSlashIndex - 1 + items.length) % items.length;
+                    renderSlashMenu(dockTextarea.value);
+                    return;
+                } else if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    const selected = activeSlashIndex >= 0 ? items[activeSlashIndex] : items[0];
+                    if (selected) {
+                        selectSlashCmd(selected.getAttribute('data-cmd'));
+                    }
+                    return;
+                } else if (e.key === 'Escape') {
+                    hideSlashMenu();
+                    return;
+                }
+            }
+
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                const val = dockTextarea.value.trim();
+                if (val.startsWith('/')) {
+                    executeSlashCommand(val);
+                    dockTextarea.value = '';
+                    dockTextarea.style.height = '42px';
+                    hideSlashMenu();
+                    updateSendButtonState();
+                    return;
+                }
+                if (!dockSendBtn.disabled) doSend();
+            }
+        }
+
+        function updateSendButtonState() {
+            if (isGenerating) {
+                dockSendBtn.disabled = false;
+                dockSendBtn.classList.add('btn-stop');
+                dockSendBtn.title = "点击停止流式生成";
+                dockSendIcon.innerHTML = `<rect x="6" y="6" width="12" height="12" rx="2" ry="2" fill="currentColor"></rect>`;
+            } else {
+                dockSendBtn.classList.remove('btn-stop');
+                dockSendBtn.disabled = !dockTextarea.value.trim();
+                dockSendBtn.title = "发送消息 (Enter)";
+                dockSendIcon.innerHTML = `
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                `;
+            }
+        }
+
+        function handleSendClick() {
+            if (isGenerating) {
+                if (currentAbortController) {
+                    currentAbortController.abort();
+                    showToast('已中断本次生成', '⏹');
+                }
+            } else {
+                doSend();
+            }
+        }
+
+        function switchMode(mode) {
+            currentMode = mode;
+            document.getElementById('btnChatMode').classList.toggle('active', mode === 'chat');
+            document.getElementById('btnCompletionMode').classList.toggle('active', mode === 'completion');
+            if (mode === 'chat') {
+                dockIndicator.innerHTML = '<span>●</span> 对话模式 (NanoGPT SFT)';
+            } else {
+                dockIndicator.innerHTML = '<span>●</span> 续写模式 (Base Completion)';
+            }
+            updateTokenCountLive(dockTextarea.value);
+        }
+
+        function fillPrompt(p) {
+            dockTextarea.value = p;
+            dockTextarea.focus();
+            dockTextarea.dispatchEvent(new Event('input'));
+        }
+
+        function resetConversation() {
+            messages = [];
+            const turns = document.querySelectorAll('.chat-turn, .compact-notice-turn');
+            turns.forEach(t => t.remove());
+            updateTokenCountLive("");
+        }
+
+        function addTurn(author, role, text = '') {
+            const turn = document.createElement('div');
+            turn.className = `chat-turn ${role}`;
+
+            const label = document.createElement('div');
+            label.className = 'turn-author';
+            label.innerHTML = `<span>${author}</span>`;
+
+            // Hover action bar with Copy button
+            const actionBar = document.createElement('div');
+            actionBar.className = 'turn-action-bar';
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'turn-copy-btn';
+            copyBtn.innerHTML = `
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span>复制</span>
+            `;
+            copyBtn.onclick = () => copyRawText(text, copyBtn);
+            actionBar.appendChild(copyBtn);
+            turn.appendChild(actionBar);
+
+            const bubble = document.createElement('div');
+            bubble.className = `chat-bubble ${role === 'assistant' ? 'markdown-body' : ''}`;
+
+            if (role === 'user') {
+                bubble.textContent = text;
+            } else {
+                bubble.innerHTML = renderMarkdown(text);
+            }
+
+            turn.appendChild(label);
+            turn.appendChild(bubble);
+            chatFlow.appendChild(turn);
+
+            chatViewport.scrollTop = chatViewport.scrollHeight;
+            return { bubble, label, turn, copyBtn };
+        }
+
+        function renderMarkdown(raw) {
+            if (!raw) return '';
+            if (typeof marked !== 'undefined') {
+                try {
+                    return marked.parse(raw);
+                } catch (e) {
+                    return raw.replace(/\n/g, '<br>');
+                }
+            }
+            return raw.replace(/\n/g, '<br>');
+        }
+
+        async function doSend() {
+            const val = dockTextarea.value.trim();
+            if (!val || isGenerating) return;
+
+            // Check auto compact before sending
+            if (autoCompactEnabled && currentTokenCount >= 1433 && messages.length > 2) {
+                showToast('⚡ 上下文占用超过 70%，已触发自动压缩', '⚡');
+                await executeCompaction(true);
+            }
+
+            isGenerating = true;
+            updateSendButtonState();
+            dockTextarea.value = '';
+            dockTextarea.style.height = '42px';
+            hideSlashMenu();
+
+            addTurn('USER', 'user', val);
+            messages.push({ role: 'user', content: val });
+            updateTokenCountLive("");
+
+            const { bubble: assistantBubble, label: assistantLabel, copyBtn } = addTurn('NANOGPT 124M', 'assistant', '');
+            assistantBubble.classList.add('cursor-active');
+
+            const startTime = performance.now();
+            currentAbortController = new AbortController();
+
+            try {
+                const res = await fetch('/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: currentAbortController.signal,
+                    body: JSON.stringify({
+                        mode: currentMode,
+                        messages: messages,
+                        system_prompt: systemPrompt || undefined,
+                        temperature: params.temperature,
+                        top_k: params.top_k,
+                        max_tokens: params.max_tokens
+                    })
+                });
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let full = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                if (data.token) {
+                                    full += data.token;
+                                    assistantBubble.innerHTML = renderMarkdown(full);
+                                    chatViewport.scrollTop = chatViewport.scrollHeight;
+                                }
+                                if (data.done && data.tokens) {
+                                    const dur = ((performance.now() - startTime) / 1000).toFixed(1);
+                                    assistantLabel.innerHTML = `<span>NANOGPT 124M</span> <span class="turn-token-badge">${data.tokens} tokens · ${dur}s</span>`;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }
+                messages.push({ role: 'assistant', content: full });
+                copyBtn.onclick = () => copyRawText(full, copyBtn);
+                updateTokenCountLive("");
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    assistantBubble.innerHTML += `<br><span style="color: var(--amber); font-size: 0.8rem;">[已中断生成]</span>`;
+                } else {
+                    assistantBubble.innerHTML = `<span style="color: var(--rose);">❌ 请求错误: ${err.message}</span>`;
+                }
+            } finally {
+                assistantBubble.classList.remove('cursor-active');
+                isGenerating = false;
+                currentAbortController = null;
+                updateSendButtonState();
+            }
+        }
+
+        // Live Training Status Poll
+        async function updateStatus() {
+            try {
+                const res = await fetch('/api/training_status');
+                if (res.ok) {
+                    const d = await res.json();
+                    document.getElementById('hudStep').textContent = `Step ${d.step}/${d.total_steps}`;
+                    document.getElementById('hudLoss').textContent = `Loss ${Number(d.loss).toFixed(2)}`;
+                    topProgressBar.style.width = `${d.pct}%`;
+                    document.getElementById('phase1Detail').textContent = `进度: ${d.pct}% | Loss: ${Number(d.loss).toFixed(2)} | 吞吐: ${d.tok_sec} tok/s | ETA: ${d.eta}`;
+                }
+            } catch (e) {}
+        }
+        setInterval(updateStatus, 8000);
+        updateStatus();
+        updateTokenCountLive("");
+
+        // Modals
+        function openSettingsModal() { document.getElementById('settingsModal').classList.add('visible'); }
+        function closeSettingsModal() { document.getElementById('settingsModal').classList.remove('visible'); }
+        function openTerminalModal() {
+            document.getElementById('terminalModal').classList.add('visible');
+            refreshTerminal();
+        }
+        function closeTerminalModal() { document.getElementById('terminalModal').classList.remove('visible'); }
+        function openSystemModal() {
+            document.getElementById('systemPromptInput').value = systemPrompt;
+            document.getElementById('systemModal').classList.add('visible');
+        }
+        function closeSystemModal() { document.getElementById('systemModal').classList.remove('visible'); }
+        function saveSystemPrompt(clear = false) {
+            if (clear) {
+                systemPrompt = '';
+                document.getElementById('systemPromptInput').value = '';
+                showToast('已清除 System Prompt', '🧹');
+            } else {
+                systemPrompt = document.getElementById('systemPromptInput').value.trim();
+                showToast(systemPrompt ? '已保存 System Prompt 角色设定' : '已清除设定', '✓');
+            }
+            closeSystemModal();
+        }
+        function closeOnScrim(e, id) { if (e.target.id === id) document.getElementById(id).classList.remove('visible'); }
+
+        async function refreshTerminal() {
+            try {
+                const res = await fetch('/api/logs');
+                if (res.ok) {
+                    const d = await res.json();
+                    document.getElementById('terminalContent').textContent = d.logs || '暂无日志';
+                }
+            } catch (e) {}
+        }
+
+        function changeSetting(k, v) {
+            if (k === 'temp') {
+                params.temperature = parseFloat(v);
+                document.getElementById('dispTemp').textContent = v;
+            } else if (k === 'topK') {
+                params.top_k = parseInt(v);
+                document.getElementById('dispTopK').textContent = v;
+            } else if (k === 'maxTokens') {
+                params.max_tokens = parseInt(v);
+                document.getElementById('dispMaxTokens').textContent = v;
+            }
+        }
+    </script>
+    </script>
+</body>
+</html>

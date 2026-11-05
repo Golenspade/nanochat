@@ -32,6 +32,13 @@ def build_sft_task_lists(args, base_dir, factories=None):
     factories = DEFAULT_FACTORIES if factories is None else factories
     identity_conversations_filepath = os.path.join(base_dir, "identity_conversations.jsonl")
 
+    # Locate Chinese identity dataset (NanoGPT + Creator persona)
+    identity_cn_filepath = os.path.join(base_dir, "identity_conversations_cn.jsonl")
+    if not os.path.exists(identity_cn_filepath):
+        alt_cn = os.path.join(os.path.dirname(__file__), "..", "tasks", "identity_conversations_cn.jsonl")
+        if os.path.exists(alt_cn):
+            identity_cn_filepath = alt_cn
+
     train_tasks = [
         factories["SmolTalk"](split="train"),
         factories["CustomJSON"](filepath=identity_conversations_filepath),
@@ -41,6 +48,14 @@ def build_sft_task_lists(args, base_dir, factories=None):
         factories["SimpleSpelling"](size=200000, split="train"),
         factories["SpellingBee"](size=80000, split="train"),
     ]
+
+    # Inject Chinese identity conversations if available
+    if os.path.exists(identity_cn_filepath):
+        train_tasks.extend([
+            factories["CustomJSON"](filepath=identity_cn_filepath),
+            factories["CustomJSON"](filepath=identity_cn_filepath),
+            factories["CustomJSON"](filepath=identity_cn_filepath),
+        ])
 
     train_tasks.extend(factories["SmolTalkCN"](split="train") for _ in range(args.cn_talk_epochs))
     train_tasks.extend(factories["GSM8KCN"](subset="main", split="train") for _ in range(args.gsm8k_cn_epochs))
