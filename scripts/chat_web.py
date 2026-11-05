@@ -94,15 +94,17 @@ class Worker:
 class WorkerPool:
     """Pool of workers, each with a model replica on a different GPU."""
 
-    def __init__(self, num_gpus: Optional[int] = None):
+    def __init__(self, num_gpus: Optional[int] = None, queue_timeout: float = 30.0):
         if num_gpus is None:
             if device_type == "cuda":
                 num_gpus = torch.cuda.device_count()
             else:
                 num_gpus = 1 # e.g. cpu|mps
         self.num_gpus = num_gpus
+        self.queue_timeout = queue_timeout
         self.workers: List[Worker] = []
-        self.available_workers: asyncio.Queue = asyncio.Queue()
+        # Bounded queue: maxsize = num_gpus means backpressure when all workers are busy
+        self.available_workers: asyncio.Queue = asyncio.Queue(maxsize=num_gpus)
 
     async def initialize(self, source: str, model_tag: Optional[str] = None, step: Optional[int] = None):
         """Load model on each GPU."""
@@ -132,9 +134,10 @@ class WorkerPool:
 
         print(f"All {self.num_gpus} workers initialized!")
 
-    async def acquire_worker(self) -> Worker:
-        """Get an available worker from the pool."""
-        return await self.available_workers.get()
+    async def acquire_worker(self, timeout: Optional[float] = None) -> Worker:
+        """Get an available worker from the pool. Raises asyncio.TimeoutError if no worker available."""
+        timeout = timeout if timeout is not None else self.queue_timeout
+        return await asyncio.wait_for(self.available_workers.get(), timeout=timeout)
 
     async def release_worker(self, worker: Worker):
         """Return a worker to the pool."""
@@ -267,10 +270,18 @@ async def generate_stream(
     assistant_end = worker.tokenizer.encode_special("<|assistant_end|>")
     bos = worker.tokenizer.get_bos_token_id()
 
-    # Accumulate tokens to properly handle multi-byte UTF-8 characters (like emojis)
-    accumulated_tokens = []
-    # Track the last complete UTF-8 string (without replacement characters)
-    last_clean_text = ""
+    # Try to use byte-level incremental decoding for tiktoken-based tokenizers
+    # This avoids O(T^2) full-decode cost by accumulating raw bytes.
+    enc = getattr(worker.tokenizer, 'enc', None)
+    use_byte_decode = enc is not None and hasattr(enc, 'decode_single_token_bytes')
+
+    if use_byte_decode:
+        byte_buffer = bytearray()
+        decoded_text = ""
+    else:
+        # Fallback: accumulate tokens and do full decode each step
+        accumulated_tokens = []
+        last_clean_text = ""
 
     for token_column, token_masks in worker.engine.generate(
         tokens,
@@ -286,19 +297,31 @@ async def generate_stream(
         if token == assistant_end or token == bos:
             break
 
-        # Append the token to sequence
-        accumulated_tokens.append(token)
-        # Decode all accumulated tokens to get proper UTF-8 handling
-        # Note that decode is a quite efficient operation, basically table lookup and string concat
-        current_text = worker.tokenizer.decode(accumulated_tokens)
-        # Only emit text if it doesn't end with a replacement character
-        # This ensures we don't emit incomplete UTF-8 sequences
-        if not current_text.endswith('�'):
-            # Extract only the new text since last clean decode
-            new_text = current_text[len(last_clean_text):]
-            if new_text:  # Only yield if there's new content
-                yield f"data: {json.dumps({'token': new_text, 'gpu': worker.gpu_id}, ensure_ascii=False)}\n\n"
-                last_clean_text = current_text
+        if use_byte_decode:
+            # Incremental byte-level decode
+            try:
+                token_bytes = enc.decode_single_token_bytes(token)
+            except KeyError:
+                # Special token or unknown ID: fall back to string decode for this token
+                token_bytes = worker.tokenizer.decode([token]).encode('utf-8')
+            byte_buffer.extend(token_bytes)
+            current_text = byte_buffer.decode('utf-8', errors='replace')
+            # Only emit text if it doesn't end with a replacement character
+            # This ensures we don't emit incomplete UTF-8 sequences
+            if not current_text.endswith('�'):
+                new_text = current_text[len(decoded_text):]
+                if new_text:  # Only yield if there's new content
+                    yield f"data: {json.dumps({'token': new_text, 'gpu': worker.gpu_id}, ensure_ascii=False)}\n\n"
+                    decoded_text = current_text
+        else:
+            # Fallback: decode all accumulated tokens to get proper UTF-8 handling
+            accumulated_tokens.append(token)
+            current_text = worker.tokenizer.decode(accumulated_tokens)
+            if not current_text.endswith('�'):
+                new_text = current_text[len(last_clean_text):]
+                if new_text:
+                    yield f"data: {json.dumps({'token': new_text, 'gpu': worker.gpu_id}, ensure_ascii=False)}\n\n"
+                    last_clean_text = current_text
 
     yield f"data: {json.dumps({'done': True})}\n\n"
 
@@ -317,7 +340,13 @@ async def chat_completions(request: ChatRequest):
 
     # Acquire a worker from the pool (will wait if all are busy)
     worker_pool = app.state.worker_pool
-    worker = await worker_pool.acquire_worker()
+    try:
+        worker = await worker_pool.acquire_worker()
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail="Server is at capacity. All workers are busy. Please retry later."
+        )
 
     try:
         # Build conversation tokens
@@ -377,11 +406,20 @@ async def chat_completions(request: ChatRequest):
 async def health():
     """Health check endpoint."""
     worker_pool = getattr(app.state, 'worker_pool', None)
+    if worker_pool is not None:
+        available = worker_pool.available_workers.qsize()
+        total = len(worker_pool.workers)
+        busy = total - available
+    else:
+        available = total = busy = 0
     return {
         "status": "ok",
-        "ready": worker_pool is not None and len(worker_pool.workers) > 0,
-        "num_gpus": worker_pool.num_gpus if worker_pool else 0,
-        "available_workers": worker_pool.available_workers.qsize() if worker_pool else 0
+        "ready": total > 0,
+        "num_gpus": total,
+        "available_workers": available,
+        "busy_workers": busy,
+        "queue_capacity": total,
+        "queue_full": busy >= total and total > 0,
     }
 
 @app.get("/stats")

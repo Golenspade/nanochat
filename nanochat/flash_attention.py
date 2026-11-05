@@ -156,20 +156,44 @@ def flash_attn_with_kvcache(q, k_cache, v_cache, k=None, v=None, cache_seqlens=N
     B, T_new, H, D = q.shape
     pos = cache_seqlens[0].item()  # assume uniform position across batch
 
+    # Detect cache layout from shape: (B, T, H, D) = bthd, (B, H, T, D) = bhtd
+    # q is (B, T_new, H, D). k_cache is either (B, T_max, H_kv, D) or (B, H_kv, T_max, D).
+    # In bhtd layout, dim1 == H_kv and dim2 == T_max.
+    # In bthd layout, dim1 == T_max and dim2 == H_kv.
+    # We distinguish by checking whether dim2 matches D (head_dim) => bhtd if dim3 == D.
+    # Actually: bhtd = (B, H_kv, T_max, D), bthd = (B, T_max, H_kv, D).
+    # So in both cases, the last dim is D. We check if dim2 or dim3 is D... both are.
+    # Robust heuristic: compare dim1 vs dim2. For all practical configs T_max != H_kv.
+    # Also verify last dim is D to catch unexpected shapes.
+    assert k_cache.dim() == 4 and k_cache.size(-1) == D, f"Unexpected k_cache shape {k_cache.shape}, expected last dim {D}"
+    is_bhtd = k_cache.size(1) < k_cache.size(2)
+
     # Insert new k, v into cache (in-place, matching FA3 behavior)
     if k is not None and v is not None:
-        k_cache[:, pos:pos+T_new, :, :] = k
-        v_cache[:, pos:pos+T_new, :, :] = v
+        if is_bhtd:
+            k_cache[:, :, pos:pos+T_new, :] = k.transpose(1, 2)
+            v_cache[:, :, pos:pos+T_new, :] = v.transpose(1, 2)
+        else:
+            k_cache[:, pos:pos+T_new, :, :] = k
+            v_cache[:, pos:pos+T_new, :, :] = v
 
     # Get full cache up to current position + new tokens
     end_pos = pos + T_new
-    k_full = k_cache[:, :end_pos, :, :]
-    v_full = v_cache[:, :end_pos, :, :]
+    if is_bhtd:
+        k_full = k_cache[:, :, :end_pos, :]
+        v_full = v_cache[:, :, :end_pos, :]
+    else:
+        k_full = k_cache[:, :end_pos, :, :]
+        v_full = v_cache[:, :end_pos, :, :]
 
     # Transpose to SDPA layout: (B, T, H, D) -> (B, H, T, D)
     q_sdpa = q.transpose(1, 2)
-    k_sdpa = k_full.transpose(1, 2)
-    v_sdpa = v_full.transpose(1, 2)
+    if is_bhtd:
+        k_sdpa = k_full
+        v_sdpa = v_full
+    else:
+        k_sdpa = k_full.transpose(1, 2)
+        v_sdpa = v_full.transpose(1, 2)
 
     enable_gqa = q_sdpa.size(1) != k_sdpa.size(1)
     y_sdpa = _sdpa_attention(q_sdpa, k_sdpa, v_sdpa, window_size, enable_gqa)
