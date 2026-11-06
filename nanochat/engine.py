@@ -89,12 +89,20 @@ class KVCache:
     - Position tracked per batch element via cache_seqlens tensor
     """
 
-    def __init__(self, batch_size, num_heads, seq_len, head_dim, num_layers, device, dtype, layout=None):
+    def __init__(self, batch_size, num_heads, seq_len, head_dim, num_layers, device, dtype, layout=None, layer_mapping=None):
         self.batch_size = batch_size
         self.max_seq_len = seq_len
         self.n_layers = num_layers
         self.n_heads = num_heads
         self.head_dim = head_dim
+        self.layer_mapping = tuple(range(num_layers)) if layer_mapping is None else tuple(layer_mapping)
+        if len(self.layer_mapping) != num_layers or num_layers < 1:
+            raise ValueError("layer_mapping must have one slot per logical layer")
+        n_slots = 0
+        for slot in self.layer_mapping:
+            if type(slot) is not int or slot < 0 or slot > n_slots:
+                raise ValueError("layer_mapping slots must be allocated in order starting at zero")
+            n_slots = max(n_slots, slot + 1)
         # layout: "bthd" = (B, T, H, D) for FA3, "bhtd" = (B, H, T, D) for SDPA
         if layout is None:
             from nanochat.flash_attention import USE_FA3
@@ -105,11 +113,11 @@ class KVCache:
         # Use torch.empty() instead of torch.zeros() to avoid zero-fill overhead.
         # Cache is written before read (by flash_attn_with_kvcache or SDPA fallback).
         if self.layout == "bhtd":
-            self.k_cache = torch.empty(num_layers, batch_size, num_heads, seq_len, head_dim, device=device, dtype=dtype)
-            self.v_cache = torch.empty(num_layers, batch_size, num_heads, seq_len, head_dim, device=device, dtype=dtype)
+            self.k_cache = torch.empty(n_slots, batch_size, num_heads, seq_len, head_dim, device=device, dtype=dtype)
+            self.v_cache = torch.empty(n_slots, batch_size, num_heads, seq_len, head_dim, device=device, dtype=dtype)
         else:
-            self.k_cache = torch.empty(num_layers, batch_size, seq_len, num_heads, head_dim, device=device, dtype=dtype)
-            self.v_cache = torch.empty(num_layers, batch_size, seq_len, num_heads, head_dim, device=device, dtype=dtype)
+            self.k_cache = torch.empty(n_slots, batch_size, seq_len, num_heads, head_dim, device=device, dtype=dtype)
+            self.v_cache = torch.empty(n_slots, batch_size, seq_len, num_heads, head_dim, device=device, dtype=dtype)
         # Current sequence length per batch element (FA3 needs int32)
         self.cache_seqlens = torch.zeros(batch_size, dtype=torch.int32, device=device)
         # Previous token's normalized embedding for smear (set by model forward pass)
@@ -126,7 +134,8 @@ class KVCache:
 
     def get_layer_cache(self, layer_idx):
         """Return (k_cache, v_cache) views for a specific layer."""
-        return self.k_cache[layer_idx], self.v_cache[layer_idx]
+        slot = self.layer_mapping[layer_idx]
+        return self.k_cache[slot], self.v_cache[slot]
 
     def advance(self, num_tokens):
         """Advance the cache position by num_tokens."""
@@ -139,6 +148,8 @@ class KVCache:
         """
         assert self.get_pos() == 0, "Cannot prefill a non-empty KV cache"
         assert self.n_layers == other.n_layers and self.n_heads == other.n_heads and self.head_dim == other.head_dim
+        if self.layer_mapping != other.layer_mapping:
+            raise ValueError("Cannot prefill caches with different layer mappings")
         assert self.max_seq_len >= other.max_seq_len
         assert self.layout == other.layout, f"Layout mismatch: {self.layout} vs {other.layout}"
         other_pos = other.get_pos()
@@ -216,6 +227,8 @@ class Engine:
         # 1) Run a batch 1 prefill of the prompt tokens
         m = self.model.config
         kv_model_kwargs = {"num_heads": m.n_kv_head, "head_dim": m.n_embd // m.n_head, "num_layers": m.n_layer}
+        if hasattr(m, "kv_cache_layer_map"):
+            kv_model_kwargs["layer_mapping"] = m.kv_cache_layer_map()
         kv_cache_prefill = KVCache(
             batch_size=1,
             seq_len=len(tokens),
