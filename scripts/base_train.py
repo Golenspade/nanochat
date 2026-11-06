@@ -111,7 +111,9 @@ wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat", 
 # Flash Attention status
 from nanochat.flash_attention import USE_FA3
 using_fa3 = USE_FA3
-if using_fa3:
+if args.architecture == "deepseek_v41":
+    print0("V41 reference backend: portable gathered sparse attention (PyTorch), single GPU optimizer.")
+elif using_fa3:
     print0("✓ Using Flash Attention 3 (Hopper GPU detected), efficient, new and awesome.")
 else:
     print0("!" * 80)
