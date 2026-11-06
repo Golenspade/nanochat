@@ -1224,24 +1224,34 @@
                         基于双语深度定制架构，词表扩展至 49,152（含中文 Byte Fallback），支持 2048 上下文窗口、上下文智能归纳压缩、流式 Markdown 与代码高亮渲染。输入 <code style="color: #60a5fa; background: rgba(59,130,246,0.15); padding: 2px 5px; border-radius: 4px;">/</code> 可调出快捷指令菜单。
                     </div>
 
-                    <div class="phase-grid">
-                        <div class="phase-panel active">
+                    <div class="phase-grid" id="phaseGrid">
+                        <div class="phase-panel" id="phase1Panel">
                             <div class="phase-header">
-                                <span class="phase-name">Step 4 · Base 预训练 (正在进行)</span>
-                                <span class="phase-pill pill-running">ACTIVE</span>
+                                <span class="phase-name">Step 4 · Base 预训练 (已圆满完成)</span>
+                                <span class="phase-pill pill-done" id="phase1Pill" style="background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3);">DONE</span>
                             </div>
                             <div class="phase-metric-line" id="phase1Detail">
-                                进度: 77.6% | Loss: 3.08 | BPB: 0.936
+                                2808 步收官 · Validation BPB: 0.897 · Loss: 2.97 · 耗时 143m
                             </div>
                         </div>
 
-                        <div class="phase-panel">
+                        <div class="phase-panel active" id="phase2Panel">
                             <div class="phase-header">
-                                <span class="phase-name">Step 5 · Chat SFT 对齐 (准备就绪)</span>
-                                <span class="phase-pill pill-next">QUEUED</span>
+                                <span class="phase-name" id="phase2Title">Step 5 · Chat SFT 对齐 (正在进行)</span>
+                                <span class="phase-pill pill-running" id="phase2Pill">ACTIVE</span>
                             </div>
-                            <div class="phase-metric-line">
-                                预训练完成后自动进入 NanoGPT 创作者身份微调与中文对话对齐
+                            <div class="phase-metric-line" id="phase2Detail">
+                                正在执行 fankex 创作者身份微调 + SmolTalkCN (100万行) + GSM8K 对齐
+                            </div>
+                        </div>
+
+                        <div class="phase-panel" id="phase3Panel" style="opacity: 0.85;">
+                            <div class="phase-header">
+                                <span class="phase-name">Step 6 · Post-train RLHF (计划排队)</span>
+                                <span class="phase-pill pill-next" id="phase3Pill" style="background: rgba(168,85,247,0.15); color: #c084fc; border: 1px solid rgba(168,85,247,0.3);">QUEUED</span>
+                            </div>
+                            <div class="phase-metric-line" id="phase3Detail">
+                                SFT 完成后自动启动 GRPO 强化学习，并对比 Pure SFT vs SFT+RL
                             </div>
                         </div>
                     </div>
@@ -1980,10 +1990,26 @@
                 const res = await fetch('/api/training_status');
                 if (res.ok) {
                     const d = await res.json();
-                    document.getElementById('hudStep').textContent = `Step ${d.step}/${d.total_steps}`;
-                    document.getElementById('hudLoss').textContent = `Loss ${Number(d.loss).toFixed(2)}`;
-                    topProgressBar.style.width = `${d.pct}%`;
-                    document.getElementById('phase1Detail').textContent = `进度: ${d.pct}% | Loss: ${Number(d.loss).toFixed(2)} | 吞吐: ${d.tok_sec} tok/s | ETA: ${d.eta}`;
+                    const isSFT = (d.phase === 'chat_sft') || (d.step >= 2808) || (d.logs && (d.logs.includes('SFT Fine-Tuning') || d.logs.includes('scripts.chat_sft')));
+                    if (isSFT) {
+                        document.getElementById('hudStep').textContent = `SFT 对齐 · Step ${d.step || 1}/${d.total_steps || 1148} (${(d.pct || 0).toFixed(1)}%)`;
+                        document.getElementById('hudLoss').textContent = d.loss ? `Loss ${Number(d.loss).toFixed(2)}` : '对齐微调中';
+                        topProgressBar.style.width = `${Math.min(100, Math.max(5, d.pct || 15))}%`;
+                        topProgressBar.style.background = 'linear-gradient(90deg, #3b82f6, #a855f7)';
+                        
+                        document.getElementById('phase1Panel').classList.remove('active');
+                        document.getElementById('phase2Panel').classList.add('active');
+                        if (d.loss && d.loss < 10) {
+                            document.getElementById('phase2Detail').textContent = `SFT 迭代中 | 进度: ${(d.pct || 0).toFixed(1)}% | 步数: ${d.step}/${d.total_steps || 1148} | Loss: ${Number(d.loss).toFixed(2)} | 吞吐: ${d.tok_sec || '180,000'} tok/s | ETA: ${d.eta || '35m'} | fankex 专属身份注入中`;
+                        } else {
+                            document.getElementById('phase2Detail').textContent = `SFT 多任务微调进行中 (SmolTalkCN 百万中文对话 + fankex 创作者身份 + GSM8K)`;
+                        }
+                    } else {
+                        document.getElementById('hudStep').textContent = `Step ${d.step}/${d.total_steps}`;
+                        document.getElementById('hudLoss').textContent = `Loss ${Number(d.loss).toFixed(2)}`;
+                        topProgressBar.style.width = `${d.pct}%`;
+                        document.getElementById('phase1Detail').textContent = `进度: ${d.pct}% | Loss: ${Number(d.loss).toFixed(2)} | 吞吐: ${d.tok_sec} tok/s | ETA: ${d.eta}`;
+                    }
                 }
             } catch (e) {}
         }

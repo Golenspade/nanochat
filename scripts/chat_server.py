@@ -54,6 +54,9 @@ TRAINING_STATE = {
 LOG_REGEX = re.compile(
     r"step\s+(\d+)/(\d+)\s+\(([\d\.]+)%\)\s+\|\s+loss:\s+([\d\.]+)\s+\|.*?tok/sec:\s+([\d,]+)\s+\|\s+bf16_mfu:\s+([\d\.]+)\s+\|.*?eta:\s+([\d\.]+m)"
 )
+LOG_REGEX_SFT = re.compile(
+    r"step\s+(\d+)\s+\(([\d\.]+)%\)\s+\|\s+loss:\s+([\d\.]+)\s+\|.*?tok/sec:\s+([\d,]+)\s+\|\s+mfu:\s+([\d\.]+)"
+)
 
 async def poll_colab_training():
     """Background task to poll Colab training status and tail log."""
@@ -61,40 +64,55 @@ async def poll_colab_training():
     if not os.path.exists(colab_bin):
         colab_bin = "colab"
 
-    scratch_script = os.path.expanduser("~/.gemini/antigravity-cli/brain/333663ae-1076-4802-98fd-951091613c7b/scratch/fetch_log.py")
-    os.makedirs(os.path.dirname(scratch_script), exist_ok=True)
-    with open(scratch_script, "w", encoding="utf-8") as f:
-        f.write("import subprocess\nprint(subprocess.check_output('tail -n 12 /content/train.log', shell=True, text=True))\n")
-
+    tmp_log = "/tmp/colab_train.log"
     while True:
         try:
-            cmd = [colab_bin, "--auth", "adc", "exec", "-s", "nanochat-train", "-f", scratch_script]
+            cmd = [colab_bin, "--auth", "adc", "download", "-s", "nanochat-train", "/content/train.log", tmp_log]
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
             try:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=12.0)
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10.0)
             except asyncio.TimeoutError:
                 try:
                     proc.kill()
                     await proc.wait()
                 except Exception:
                     pass
-                logger.warning("Colab poll timed out after 12s, killed subprocess.")
+                logger.warning("Colab poll timed out after 10s, killed subprocess.")
                 await asyncio.sleep(5)
                 continue
 
-            if proc.returncode == 0:
-                out_text = stdout.decode("utf-8", errors="replace")
+            if proc.returncode == 0 and os.path.exists(tmp_log):
+                with open(tmp_log, "r", encoding="utf-8", errors="replace") as lf:
+                    lines = lf.readlines()
+                out_text = "".join(lines[-15:])
                 TRAINING_STATE["logs"] = out_text
                 TRAINING_STATE["last_updated"] = time.time()
 
-                # Parse the last step line
-                matches = list(LOG_REGEX.finditer(out_text))
-                if matches:
-                    last_m = matches[-1]
+                # Parse base training or SFT lines
+                sft_matches = list(LOG_REGEX_SFT.finditer(out_text))
+                base_matches = list(LOG_REGEX.finditer(out_text))
+                if "SFT Fine-Tuning" in out_text or sft_matches:
+                    TRAINING_STATE["phase"] = "chat_sft"
+                    TRAINING_STATE["active"] = True
+                    if sft_matches:
+                        sm = sft_matches[-1]
+                        step_num = int(sm.group(1))
+                        pct_num = float(sm.group(2))
+                        TRAINING_STATE["step"] = step_num
+                        TRAINING_STATE["total_steps"] = 1148
+                        TRAINING_STATE["pct"] = pct_num
+                        TRAINING_STATE["loss"] = float(sm.group(3))
+                        TRAINING_STATE["tok_sec"] = sm.group(4)
+                        TRAINING_STATE["mfu"] = float(sm.group(5))
+                        rem_steps = max(0, 1148 - step_num)
+                        rem_mins = int(rem_steps * 2.9 / 60)
+                        TRAINING_STATE["eta"] = f"{rem_mins}m"
+                elif base_matches:
+                    last_m = base_matches[-1]
                     TRAINING_STATE["step"] = int(last_m.group(1))
                     TRAINING_STATE["total_steps"] = int(last_m.group(2))
                     TRAINING_STATE["pct"] = float(last_m.group(3))
@@ -104,6 +122,12 @@ async def poll_colab_training():
                     TRAINING_STATE["eta"] = last_m.group(7)
                     TRAINING_STATE["active"] = True
                     TRAINING_STATE["completed"] = (TRAINING_STATE["step"] >= TRAINING_STATE["total_steps"])
+                try:
+                    state_path = os.path.expanduser("~/.gemini/antigravity-cli/brain/333663ae-1076-4802-98fd-951091613c7b/scratch/training_state.json")
+                    with open(state_path, "w", encoding="utf-8") as sf:
+                        json.dump(TRAINING_STATE, sf, ensure_ascii=False, indent=2)
+                except Exception:
+                    pass
             else:
                 err_text = stderr.decode('utf-8', errors='replace').strip()
                 logger.warning(f"Colab poll returncode={proc.returncode}: {err_text}")
