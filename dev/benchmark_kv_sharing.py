@@ -128,8 +128,8 @@ def main():
     parser.add_argument("--decode-tokens", type=int, default=32)
     parser.add_argument("--skip-inference", action="store_true")
     args = parser.parse_args()
-    if args.steps < 16 or args.warmup_steps < 1 or args.repeats < 1 or args.decode_tokens < 1:
-        parser.error("need steps >= 16 and positive warmup/repeats/decode-tokens")
+    if args.steps < 17 or args.warmup_steps < 1 or args.repeats < 1 or args.decode_tokens < 1:
+        parser.error("need steps >= 17 and positive warmup/repeats/decode-tokens")
     _, _, _, world_size, device = compute_init("cuda")
     if world_size != 1:
         raise ValueError("This pilot requires a single GPU")

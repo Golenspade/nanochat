@@ -61,3 +61,11 @@ parser.add_argument("--kv-share-pattern", type=str, default="F", help="KV sharin
 - [x] Document report section/page provenance, differences from CSA2, cache formula `2 * slots * batch * capacity * kv_heads * head_dim * element_size`, fresh-training requirements, and controlled d12 experiments.
 - [x] Run the non-slow test suite and review the complete diff: 61 passed, 12 FA3/Hopper skips. Compare default F with the original model: state keys, seeded weights, and full-sequence logits are bitwise identical.
 - [x] Commit only scoped files, push the branch, and open a PR targeting `chinese-support`. Verified PR [#1](https://github.com/Golenspade/nanochat/pull/1): open, not merged, head `codex/deepseek-cross-layer-kv`, base `chinese-support`.
+
+### Task 3: User-requested Colab GPU validation
+
+- [x] Verify Colab CLI/auth, inspect existing session load, and create a separate A100 test session without interrupting the existing training.
+- [x] Add `dev/prepare_kv_corpus.py` and `dev/benchmark_kv_sharing.py` for a bounded, reproducible real-data comparison.
+- [x] Run F/FR/FRR at two seeds with the same 1,048,576-token budget, independent validation data, CUDA Inductor and MuonAdamW; measure actual allocated memory and eager inference at 1K/4K contexts.
+- [x] Download and validate all six result JSONs, archive hash and corpus/commit provenance; release the dedicated GPU session.
+- [x] Document measurements, reproduction commands and limits in `docs/kv-sharing-a100-results.md` with raw records in `dev/benchmarks/kv-sharing-a100-2026-11-06/`.

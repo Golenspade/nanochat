@@ -74,7 +74,7 @@ python -m pytest tests/ -v -m 'not slow'
 python -m pytest tests/test_kv_sharing.py::test_compiled_training_matches_eager_gradients -v
 ```
 
-The full suite completed locally with **61 passed, 12 skipped** on macOS/Python 3.10/PyTorch 2.9.1. Ordinary new behavior checks force eager CPU/SDPA execution; the compiled-training test enables Dynamo and AOTAutograd. The second command isolates that test. All skips require FA3/Hopper. These checks do not establish CUDA Inductor, multi-GPU optimizer, FP8, H100 throughput, or trained-model quality. No training datasets or weights are downloaded by the new tests.
+The full suite completed locally with **61 passed, 12 skipped** on macOS/Python 3.10/PyTorch 2.9.1, and the same counts on a Colab A100. Ordinary new behavior checks force eager CPU/SDPA execution; the compiled-training test enables Dynamo and AOTAutograd. The second command isolates that test. All skips require FA3/Hopper. A separate [A100 pilot](kv-sharing-a100-results.md) establishes real CUDA Inductor training, optimizer updates, BF16 cache parity and measured inference. Multi-GPU, FP8, H100 and final trained-model quality remain unverified. No training datasets or weights are downloaded by the new tests.
 
 ## Controlled d12 experiment
 
@@ -92,4 +92,4 @@ OMP_NUM_THREADS=1 torchrun --standalone --nproc_per_node=8 -m scripts.base_train
     --model-tag d12-kv-fr --run d12-kv-fr --core-metric-every 999999 --sample-every -1
 ```
 
-Fixing steps and batch size matters: the automatic token horizon changes when the parameter count changes. Measure validation BPB/CORE, trained generation quality, prefill/decode latency, peak GPU memory and throughput before considering a default change. Compare inference at equal batch/context/dtype, and keep compile warmup separate. These GPU/quality experiments have not been run as part of this PR.
+Fixing steps and batch size matters: the automatic token horizon changes when the parameter count changes. Measure validation BPB/CORE, trained generation quality, prefill/decode latency, peak GPU memory and throughput before considering a default change. Compare inference at equal batch/context/dtype, and keep compile warmup separate. The [bounded single-GPU pilot](kv-sharing-a100-results.md) reports actual measurements and its limits; a full-budget quality experiment remains outstanding.
