@@ -37,6 +37,22 @@ class GPTConfig:
     # Characters: L=long (full context), S=short (quarter context)
     # Examples: "L"=all full context, "SL"=alternating, "SSL"=two short then one long
     window_pattern: str = "SSSL"
+    # F produces KV; R reuses the most recent F's KV. Tiled across layers.
+    kv_share_pattern: str = "F"
+
+    def kv_cache_layer_map(self) -> tuple[int, ...]:
+        """Map logical attention layers to physical KV slots (dense CSA2-inspired reuse)."""
+        pattern = self.kv_share_pattern.upper()
+        if not pattern or pattern[0] != "F" or any(c not in "FR" for c in pattern):
+            raise ValueError("kv_share_pattern must start with F and contain only F (produce) or R (reuse)")
+        if self.n_layer < 1:
+            raise ValueError("n_layer must be positive")
+        slot = -1
+        slots = []
+        for i in range(self.n_layer):
+            slot += pattern[i % len(pattern)] == "F"
+            slots.append(slot)
+        return tuple(slots)
 
 
 def norm(x):
@@ -70,36 +86,40 @@ class CausalSelfAttention(nn.Module):
         self.n_kv_head = config.n_kv_head
         self.n_embd = config.n_embd
         self.head_dim = self.n_embd // self.n_head
+        layer_map = config.kv_cache_layer_map()
+        self.owns_kv = layer_idx == 0 or layer_map[layer_idx] != layer_map[layer_idx - 1]
         assert self.n_embd % self.n_head == 0
         assert self.n_kv_head <= self.n_head and self.n_head % self.n_kv_head == 0
         self.c_q = Linear(self.n_embd, self.n_head * self.head_dim, bias=False)
-        self.c_k = Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
-        self.c_v = Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
+        self.c_k = Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False) if self.owns_kv else None
+        self.c_v = Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False) if self.owns_kv else None
         self.c_proj = Linear(self.n_embd, self.n_embd, bias=False)
         self.ve_gate_channels = 12
-        self.ve_gate = Linear(self.ve_gate_channels, self.n_kv_head, bias=False) if has_ve(layer_idx, config.n_layer) else None
+        use_ve = self.owns_kv and has_ve(layer_map[layer_idx], layer_map[-1] + 1)
+        self.ve_gate = Linear(self.ve_gate_channels, self.n_kv_head, bias=False) if use_ve else None
 
-    def forward(self, x, ve, cos_sin, window_size, kv_cache):
+    def forward(self, x, ve, cos_sin, window_size, kv_cache, shared_kv=None):
         B, T, C = x.size()
 
         # Project the input to get queries, keys, and values
         # Shape: (B, T, H, D) - FA3's native layout, no transpose needed!
         q = self.c_q(x).view(B, T, self.n_head, self.head_dim)
-        k = self.c_k(x).view(B, T, self.n_kv_head, self.head_dim)
-        v = self.c_v(x).view(B, T, self.n_kv_head, self.head_dim)
-
-        # Value residual (ResFormer): mix in value embedding with input-dependent gate per head
-        if ve is not None:
-            ve = ve.view(B, T, self.n_kv_head, self.head_dim)
-            gate = 3 * torch.sigmoid(self.ve_gate(x[..., :self.ve_gate_channels]))  # (B, T, n_kv_head), range (0, 3)
-            v = v + gate.unsqueeze(-1) * ve
-
-        # Apply Rotary Embeddings to queries and keys to get relative positional encoding
         cos, sin = cos_sin
-        q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
-        q, k = norm(q), norm(k) # QK norm
+        q = norm(apply_rotary_emb(q, cos, sin))
         q = q * 1.2  # sharper attention (split scale between Q and K), TODO think through better
-        k = k * 1.2
+        if self.owns_kv:
+            k = self.c_k(x).view(B, T, self.n_kv_head, self.head_dim)
+            v = self.c_v(x).view(B, T, self.n_kv_head, self.head_dim)
+            # Value embeddings belong to KV producers and are shared with their consumers.
+            if ve is not None:
+                ve = ve.view(B, T, self.n_kv_head, self.head_dim)
+                gate = 3 * torch.sigmoid(self.ve_gate(x[..., :self.ve_gate_channels]))
+                v = v + gate.unsqueeze(-1) * ve
+            k = norm(apply_rotary_emb(k, cos, sin)) * 1.2
+            shared_kv = (k, v)
+        else:
+            # Already rotated/normalized by the producer. Keep the autograd connection.
+            k, v = shared_kv
 
         # Flash Attention (FA3 on Hopper+, PyTorch SDPA fallback elsewhere)
         # window_size is (left, right) tuple: (N, 0) for causal, (-1, 0) for full context
@@ -111,19 +131,18 @@ class CausalSelfAttention(nn.Module):
             k_cache, v_cache = kv_cache.get_layer_cache(self.layer_idx)
             y = flash_attn.flash_attn_with_kvcache(
                 q, k_cache, v_cache,
-                k=k, v=v,
-                cache_seqlens=kv_cache.cache_seqlens,
+                k=k if self.owns_kv else None, v=v if self.owns_kv else None,
+                # Read-only consumers see the tokens just inserted by their producer.
+                cache_seqlens=kv_cache.cache_seqlens if self.owns_kv else kv_cache.cache_seqlens + T,
                 causal=True,
                 window_size=window_size,
+                cache_layout=kv_cache.layout,
             )
-            # Advance position after last layer processes
-            if self.layer_idx == kv_cache.n_layers - 1:
-                kv_cache.advance(T)
 
         # Re-assemble the heads and project back to residual stream
         y = y.contiguous().view(B, T, -1)
         y = self.c_proj(y)
-        return y
+        return y, shared_kv
 
 
 class ReLUSquare(torch.autograd.Function):
@@ -158,10 +177,11 @@ class Block(nn.Module):
         self.attn = torch.compile(dynamic=False)(self.attn)
         self.mlp = MLP(config)
 
-    def forward(self, x, ve, cos_sin, window_size, kv_cache):
-        x = x + self.attn(norm(x), ve, cos_sin, window_size, kv_cache)
+    def forward(self, x, ve, cos_sin, window_size, kv_cache, shared_kv=None):
+        y, shared_kv = self.attn(norm(x), ve, cos_sin, window_size, kv_cache, shared_kv)
+        x = x + y
         x = x + self.mlp(norm(x))
-        return x
+        return x, shared_kv
 
 
 class GPT(nn.Module):
@@ -173,6 +193,7 @@ class GPT(nn.Module):
         """
         super().__init__()
         self.config = config
+        self.kv_layer_mapping = config.kv_cache_layer_map()
         # Compute per-layer window sizes for sliding window attention
         # window_size is (left, right) tuple: (-1, 0) for full context, (N, 0) for sliding window
         self.window_sizes = self._compute_window_sizes(config)
@@ -200,7 +221,10 @@ class GPT(nn.Module):
         # Value embeddings (ResFormer-style): alternating layers, last layer always included
         head_dim = config.n_embd // config.n_head
         kv_dim = config.n_kv_head * head_dim
-        self.value_embeds = nn.ModuleDict({str(i): nn.Embedding(padded_vocab_size, kv_dim) for i in range(config.n_layer) if has_ve(i, config.n_layer)})
+        self.value_embeds = nn.ModuleDict({
+            str(i): nn.Embedding(padded_vocab_size, kv_dim)
+            for i, block in enumerate(self.transformer.h) if block.attn.ve_gate is not None
+        })
         # To support meta device initialization, we init the rotary embeddings here, but it's just "fake" meta tensors only.
         # As for rotary_seq_len, these rotary embeddings are pretty small/cheap in memory,
         # so let's just over-compute them by 10X, but assert fail if we ever reach that amount.
@@ -236,8 +260,9 @@ class GPT(nn.Module):
         s = 3**0.5 * n_embd**-0.5 # sqrt(3) multiplier makes sure Uniform achieves the same std as Normal
         for block in self.transformer.h:
             torch.nn.init.uniform_(block.attn.c_q.weight, -s, s) # weights use Uniform to avoid outliers
-            torch.nn.init.uniform_(block.attn.c_k.weight, -s, s)
-            torch.nn.init.uniform_(block.attn.c_v.weight, -s, s)
+            if block.attn.owns_kv:
+                torch.nn.init.uniform_(block.attn.c_k.weight, -s, s)
+                torch.nn.init.uniform_(block.attn.c_v.weight, -s, s)
             torch.nn.init.zeros_(block.attn.c_proj.weight) # projections are zero
             torch.nn.init.uniform_(block.mlp.c_fc.weight, -s * 0.4, s * 0.4)  # 0.4x init scale for c_fc
             torch.nn.init.zeros_(block.mlp.c_proj.weight)
@@ -471,6 +496,11 @@ class GPT(nn.Module):
         assert self.cos.dtype == COMPUTE_DTYPE, f"Rotary embeddings must be in {COMPUTE_DTYPE}, got {self.cos.dtype}"
         # if kv cache exists, we need to offset the rotary embeddings to the current position in the cache
         T0 = 0 if kv_cache is None else kv_cache.get_pos()
+        if kv_cache is not None:
+            if kv_cache.layer_mapping != self.kv_layer_mapping:
+                raise ValueError("KV cache layer_mapping does not match the model's kv_share_pattern")
+            if T0 + T > kv_cache.max_seq_len:
+                raise ValueError("KV cache capacity exceeded")
         cos_sin = self.cos[:, T0:T0+T], self.sin[:, T0:T0+T] # truncate cache to current sequence length
 
         # Embed the tokens
@@ -491,7 +521,11 @@ class GPT(nn.Module):
             if T > 1:
                 # Prefill: apply smear to positions 1+, same as training
                 gate = self.smear_lambda.to(x.dtype) * torch.sigmoid(self.smear_gate(x[:, 1:, :24]))
-                x = torch.cat([x[:, :1], x[:, 1:] + gate * x[:, :-1]], dim=1)
+                first = x[:, :1]
+                if x_pre_smear is not None:
+                    first_gate = self.smear_lambda.to(x.dtype) * torch.sigmoid(self.smear_gate(first[..., :24]))
+                    first = first + first_gate * x_pre_smear
+                x = torch.cat([first, x[:, 1:] + gate * x[:, :-1]], dim=1)
             elif x_pre_smear is not None:
                 # Decode: single token, use cached prev embedding
                 gate = self.smear_lambda.to(x.dtype) * torch.sigmoid(self.smear_gate(x[:, :, :24]))
@@ -502,12 +536,15 @@ class GPT(nn.Module):
         n_layer = self.config.n_layer
         backout_layer = n_layer // 2  # cache at halfway point
         x_backout = None
+        shared_kv = None
         for i, block in enumerate(self.transformer.h):
             x = self.resid_lambdas[i] * x + self.x0_lambdas[i] * x0
             ve = self.value_embeds[str(i)](idx).to(x.dtype) if str(i) in self.value_embeds else None
-            x = block(x, ve, cos_sin, self.window_sizes[i], kv_cache)
+            x, shared_kv = block(x, ve, cos_sin, self.window_sizes[i], kv_cache, shared_kv)
             if i == backout_layer:
                 x_backout = x
+        if kv_cache is not None:
+            kv_cache.advance(T)
         # Subtract mid-layer residual to remove low-level features before logit projection
         if x_backout is not None:
             x = x - self.backout_lambda.to(x.dtype) * x_backout
@@ -560,6 +597,7 @@ class GPT(nn.Module):
             num_layers=m.n_layer,
             device=device,
             dtype=dtype,
+            layer_mapping=self.kv_layer_mapping,
         )
         ids = torch.tensor([tokens], dtype=torch.long, device=device)
         logits = self.forward(ids, kv_cache=kv_cache)  # prefill
