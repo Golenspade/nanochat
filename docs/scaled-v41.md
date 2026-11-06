@@ -2,6 +2,8 @@
 
 This is a small, trainable **text backbone**, not just the dense cross-layer KV experiment. The original GPT and its checkpoints remain unchanged by default. Select `architecture=deepseek_v41` to build the new model. Its shape, number of experts, memory tables, attention window and sparse budget are configurable.
 
+The [A100 acceptance report and raw records](scaled-v41-results.md) cover four trained configurations, exact checkpoint reload, cache/replay numerics and frozen-backbone draft training.
+
 Sources are the user-supplied technical report (sections 2.2-2.4 and 3.2.2) and the official MIT [minimal inference implementation](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/314113f8a7dadb388215396ba5fbee2c610a04d6/inference/model.py). See [pinned provenance and license](../sources/deepseek-v41/PROVENANCE.md). No released weights are downloaded; this model is initialized and trained from scratch.
 
 ```mermaid
@@ -34,7 +36,7 @@ flowchart TD
 | FP4 main KV | Optional E2M1 packed nibbles with E4M3 scales per 16 channels, after RoPE. Actual storage is 4.5 bits per main-latent value, including scales. Straight-through QAT is used when enabled. Local and index caches stay BF16 in GPU runs. |
 | Decoder bounded replay | Keep full encoder/global prompt processing, run decoder SWA only on the final window. Approximate states are opt-in and measured independently of exact inference. |
 | Encoder bounded replay | `cache.drop_local()` simulates missing persistent SWA. `model.replay_prefix(cache, prefix_ids, suffix_ids)` replays only the last window plus uncached suffix. Cached global prefix entries are read without recomputation/overwrite; only suffix tokens append global KV. |
-| DSpark-style forward | Three local draft blocks produce five parallel base positions, a Markov head conditions on prior drafts, and a confidence head learns greedy-acceptance targets. Backbone projections/features are detached; frozen-backbone gradients are checked. Scheduler accepts caller-profiled verification costs. Main generation remains ordinary verified-by-backbone autoregression. |
+| DSpark-style forward | Three local draft blocks produce five parallel base positions, a Markov head conditions on prior drafts, and a confidence head learns greedy-acceptance targets. Backbone projections/features are detached; frozen-backbone gradients are checked. Scheduler accepts caller-profiled verification costs. Main generation remains ordinary backbone autoregression. |
 
 The default small schedule is encoder `S,F,I,R` and decoder `F,I,R,R` at depth 8. Patterns are explicit config fields; they need not have the full-scale layer counts. For the report's depth-40 schedule use `local_only_layers=2`, encoder pattern `FRRRRR`, and a full 20-layer decoder pattern `FRRRIRRRIRRRIRRRIRRR`.
 
@@ -46,6 +48,7 @@ The default small schedule is encoder `S,F,I,R` and decoder `F,I,R,R` at depth 8
 - Sparse attention uses PyTorch gather/einsum. Full index selection currently uses stable sorting; this is a correctness reference, not the optimized linear-time top-k path. FP4 reads dequantize the populated global cache before attention, so packed storage savings are not a dequantization-free latency claim.
 - No YaRN million-token-quality claim, automatic prompt-cache service, or speed claim for DSpark. A drafter cannot safely emit unverified tokens. The confidence scheduler interface still needs real engine profiling and a verified speculative generator before any acceleration claim.
 - Bounded replay intentionally changes hidden states. Post-training adaptation is not established by these short acceptance runs.
+- At tiny widths with a 49K vocabulary, embedding/head parameters dominate. The measured total/active parameter counts therefore do not reproduce the released model's 552B/16B sparsity ratio; expert count and width are independent scaling knobs.
 - Multi-GPU training is explicitly rejected by the V41 reference optimizer until gradient reduction is implemented. Existing GPT distributed training is preserved.
 
 ## Using the model
@@ -59,6 +62,7 @@ with torch.device("meta"):
     model = DeepSeekV41(config)
 model.to_empty(device="cuda")
 model.init_weights()
+model.eval()
 # Optional before training: model.compress_engram_tokenizer(tokenizer)
 cache = model.create_kv_cache(batch_size=1, seq_len=2048)
 with torch.inference_mode():

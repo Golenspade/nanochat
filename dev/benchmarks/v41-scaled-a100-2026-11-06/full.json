@@ -1,0 +1,234 @@
+{
+  "config": {
+    "architecture": "deepseek_v41",
+    "sequence_len": 2048,
+    "vocab_size": 49152,
+    "n_layer": 8,
+    "n_embd": 128,
+    "n_head": 4,
+    "head_dim": 32,
+    "rope_dim": 8,
+    "q_rank": 64,
+    "o_rank": 64,
+    "o_groups": 2,
+    "window_size": 16,
+    "local_only_layers": 1,
+    "encoder_pattern": "FIRR",
+    "decoder_pattern": "FIRR",
+    "encoder_compression": 2,
+    "index_dim": 16,
+    "index_heads": 2,
+    "index_topk": 8,
+    "candidate_blocks": 4,
+    "candidate_block_size": 4,
+    "index_aux_weight": 0.01,
+    "hc_mult": 2,
+    "n_experts": 4,
+    "experts_per_token": 2,
+    "expert_dim": 64,
+    "enable_engram": true,
+    "engram_dim": 16,
+    "engram_buckets": 257,
+    "fp4_cache": false,
+    "window_pattern": "L"
+  },
+  "code_commit": "8d0f510edea0743a697d0ed3ab6d1593daf8ec06",
+  "seed": 42,
+  "torch": "2.9.1+cu128",
+  "gpu": "NVIDIA A100-SXM4-40GB",
+  "corpus_sha256": "9ae6fb133c2eb1aa26c407ac5e44659f75983d47b8f238d41feafff26ac21ea1",
+  "parameters": {
+    "total": 14116400,
+    "active_total": 13723184,
+    "wte": 6291456,
+    "value_embeds": 127360,
+    "lm_head": 6291456,
+    "transformer_matrices": 1012912,
+    "scalars": 0
+  },
+  "initial_validation": {
+    "bpb": 2.957660499104977,
+    "tokens": 2048
+  },
+  "final_validation": {
+    "bpb": 2.1405507227054885,
+    "tokens": 2048
+  },
+  "trained_tokens": 131072,
+  "training_seconds": 121.64859219899995,
+  "peak_allocated_bytes": 418464768,
+  "training_history": [
+    {
+      "step": 1,
+      "loss": 10.860897064208984,
+      "grad_norm": 3.119554042816162
+    },
+    {
+      "step": 33,
+      "loss": 9.53906536102295,
+      "grad_norm": 1.3604828119277954
+    },
+    {
+      "step": 65,
+      "loss": 7.740036487579346,
+      "grad_norm": 1.290697693824768
+    },
+    {
+      "step": 97,
+      "loss": 8.652795791625977,
+      "grad_norm": 1.2046364545822144
+    },
+    {
+      "step": 129,
+      "loss": 7.150080680847168,
+      "grad_norm": 1.1362229585647583
+    },
+    {
+      "step": 161,
+      "loss": 9.261524200439453,
+      "grad_norm": 1.5877127647399902
+    },
+    {
+      "step": 193,
+      "loss": 8.363930702209473,
+      "grad_norm": 1.2274894714355469
+    },
+    {
+      "step": 225,
+      "loss": 7.6665358543396,
+      "grad_norm": 1.1192121505737305
+    },
+    {
+      "step": 257,
+      "loss": 7.742809295654297,
+      "grad_norm": 1.4582871198654175
+    },
+    {
+      "step": 289,
+      "loss": 8.66136646270752,
+      "grad_norm": 1.4367197751998901
+    },
+    {
+      "step": 321,
+      "loss": 7.3631911277771,
+      "grad_norm": 1.1865947246551514
+    },
+    {
+      "step": 353,
+      "loss": 8.20807933807373,
+      "grad_norm": 1.9544926881790161
+    },
+    {
+      "step": 385,
+      "loss": 7.030074596405029,
+      "grad_norm": 1.6800273656845093
+    },
+    {
+      "step": 417,
+      "loss": 8.024762153625488,
+      "grad_norm": 1.5794663429260254
+    },
+    {
+      "step": 449,
+      "loss": 8.137063980102539,
+      "grad_norm": 1.8568655252456665
+    },
+    {
+      "step": 481,
+      "loss": 7.353888511657715,
+      "grad_norm": 1.824803113937378
+    },
+    {
+      "step": 512,
+      "loss": 7.274267196655273,
+      "grad_norm": 1.5497124195098877
+    }
+  ],
+  "checkpoint_exact_reload": true,
+  "cache_logit_max_abs_error": 0.03125,
+  "bounded_replay_mean_abs_error": 0.016472993418574333,
+  "bounded_replay_decoder_tokens": 16,
+  "generated_ids": [
+    262,
+    377,
+    377,
+    377,
+    262,
+    377,
+    377,
+    377,
+    262,
+    377,
+    377,
+    377,
+    262,
+    377,
+    377,
+    377,
+    262,
+    377,
+    377,
+    377,
+    262,
+    377,
+    377,
+    377
+  ],
+  "generated_text": " the The The The the The The The the The The The the The The The the The The The the The The The",
+  "cache": {
+    "storage_bytes": 26624,
+    "global_entries": {
+      "1": 16,
+      "4": 32
+    },
+    "local_tokens": {
+      "0": 16,
+      "1": 16,
+      "2": 16,
+      "3": 16,
+      "4": 16,
+      "5": 16,
+      "6": 16,
+      "7": 16
+    }
+  },
+  "dspark": {
+    "steps": 32,
+    "losses": [
+      11.60715389251709,
+      7.653897762298584,
+      8.580195426940918,
+      7.794139385223389,
+      7.653561592102051,
+      6.6295013427734375,
+      6.321164608001709,
+      6.229016304016113,
+      6.847166538238525,
+      8.154379844665527,
+      7.124111175537109,
+      7.52338171005249,
+      7.422675609588623,
+      7.8180437088012695,
+      8.771920204162598,
+      8.268535614013672,
+      7.697250843048096,
+      7.570675373077393,
+      7.500553607940674,
+      7.819657325744629,
+      6.960659980773926,
+      6.7513251304626465,
+      8.224207878112793,
+      7.303297519683838,
+      7.740348815917969,
+      7.5278472900390625,
+      7.475799560546875,
+      6.845551013946533,
+      8.913077354431152,
+      7.4448370933532715,
+      7.263904571533203,
+      8.240336418151855
+    ],
+    "backbone_gradients_none": true,
+    "note": "Drafter/Markov/confidence trained separately; no speculative speed claim"
+  }
+}

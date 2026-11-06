@@ -1,0 +1,196 @@
+{
+  "config": {
+    "architecture": "deepseek_v41",
+    "sequence_len": 2048,
+    "vocab_size": 49152,
+    "n_layer": 8,
+    "n_embd": 128,
+    "n_head": 4,
+    "head_dim": 32,
+    "rope_dim": 8,
+    "q_rank": 64,
+    "o_rank": 64,
+    "o_groups": 2,
+    "window_size": 16,
+    "local_only_layers": 1,
+    "encoder_pattern": "FIRR",
+    "decoder_pattern": "FIRR",
+    "encoder_compression": 2,
+    "index_dim": 16,
+    "index_heads": 2,
+    "index_topk": 8,
+    "candidate_blocks": 4,
+    "candidate_block_size": 4,
+    "index_aux_weight": 0.01,
+    "hc_mult": 2,
+    "n_experts": 4,
+    "experts_per_token": 2,
+    "expert_dim": 64,
+    "enable_engram": false,
+    "engram_dim": 16,
+    "engram_buckets": 257,
+    "fp4_cache": false,
+    "window_pattern": "L"
+  },
+  "code_commit": "8d0f510edea0743a697d0ed3ab6d1593daf8ec06",
+  "seed": 42,
+  "torch": "2.9.1+cu128",
+  "gpu": "NVIDIA A100-SXM4-40GB",
+  "corpus_sha256": "9ae6fb133c2eb1aa26c407ac5e44659f75983d47b8f238d41feafff26ac21ea1",
+  "parameters": {
+    "total": 13989040,
+    "active_total": 13595824,
+    "wte": 6291456,
+    "value_embeds": 0,
+    "lm_head": 6291456,
+    "transformer_matrices": 1012912,
+    "scalars": 0
+  },
+  "initial_validation": {
+    "bpb": 2.954738602871059,
+    "tokens": 2048
+  },
+  "final_validation": {
+    "bpb": 2.1159722007354924,
+    "tokens": 2048
+  },
+  "trained_tokens": 131072,
+  "training_seconds": 115.85984565700005,
+  "peak_allocated_bytes": 412432896,
+  "training_history": [
+    {
+      "step": 1,
+      "loss": 10.821020126342773,
+      "grad_norm": 2.7428998947143555
+    },
+    {
+      "step": 33,
+      "loss": 9.53785514831543,
+      "grad_norm": 1.3587085008621216
+    },
+    {
+      "step": 65,
+      "loss": 7.740196228027344,
+      "grad_norm": 1.2543200254440308
+    },
+    {
+      "step": 97,
+      "loss": 8.61230754852295,
+      "grad_norm": 1.1850957870483398
+    },
+    {
+      "step": 129,
+      "loss": 7.199456214904785,
+      "grad_norm": 1.2863917350769043
+    },
+    {
+      "step": 161,
+      "loss": 9.2567777633667,
+      "grad_norm": 1.384087085723877
+    },
+    {
+      "step": 193,
+      "loss": 8.341451644897461,
+      "grad_norm": 1.0467699766159058
+    },
+    {
+      "step": 225,
+      "loss": 7.670191764831543,
+      "grad_norm": 1.037583351135254
+    },
+    {
+      "step": 257,
+      "loss": 7.752981662750244,
+      "grad_norm": 1.9077321290969849
+    },
+    {
+      "step": 289,
+      "loss": 8.640813827514648,
+      "grad_norm": 1.7367192506790161
+    },
+    {
+      "step": 321,
+      "loss": 7.34281587600708,
+      "grad_norm": 1.3190993070602417
+    },
+    {
+      "step": 353,
+      "loss": 8.152377128601074,
+      "grad_norm": 1.6878153085708618
+    },
+    {
+      "step": 385,
+      "loss": 6.965847015380859,
+      "grad_norm": 1.4755690097808838
+    },
+    {
+      "step": 417,
+      "loss": 7.976513862609863,
+      "grad_norm": 1.2545839548110962
+    },
+    {
+      "step": 449,
+      "loss": 7.97545862197876,
+      "grad_norm": 1.3908350467681885
+    },
+    {
+      "step": 481,
+      "loss": 7.208588123321533,
+      "grad_norm": 1.6737830638885498
+    },
+    {
+      "step": 512,
+      "loss": 7.137340068817139,
+      "grad_norm": 1.3303027153015137
+    }
+  ],
+  "checkpoint_exact_reload": true,
+  "cache_logit_max_abs_error": 0.03125,
+  "bounded_replay_mean_abs_error": 0.08030318468809128,
+  "bounded_replay_decoder_tokens": 16,
+  "generated_ids": [
+    44,
+    288,
+    262,
+    565,
+    58,
+    661,
+    44,
+    288,
+    262,
+    565,
+    58,
+    661,
+    44,
+    288,
+    262,
+    565,
+    58,
+    661,
+    44,
+    288,
+    262,
+    565,
+    58,
+    661
+  ],
+  "generated_text": ", and theQuestion: What, and theQuestion: What, and theQuestion: What, and theQuestion: What",
+  "cache": {
+    "storage_bytes": 26624,
+    "global_entries": {
+      "1": 16,
+      "4": 32
+    },
+    "local_tokens": {
+      "0": 16,
+      "1": 16,
+      "2": 16,
+      "3": 16,
+      "4": 16,
+      "5": 16,
+      "6": 16,
+      "7": 16
+    }
+  },
+  "dspark": null
+}
