@@ -11,6 +11,10 @@ For questions about the repo, I recommend either using [DeepWiki](https://deepwi
 
 Pretraining accepts `--kv-share-pattern FR` to alternate KV-producing layers with layers that reuse those keys and values. `FRR` shares each cache across three layers; the default `F` preserves the existing architecture. This dense adaptation of DeepSeek-V4.1-Flash's cross-layer reuse reduces allocated KV storage, and requires training a model with the chosen pattern. See [design, report provenance, validation, and experiment commands](docs/deepseek-kv-reuse.md) for the differences from full CSA2 and the remaining GPU/quality evaluation.
 
+### Scaled V4.1 text architecture
+
+`--architecture deepseek_v41 --no-compile` selects a separate trainable text model: CED, compressed sparse attention with Full/Reindex/Reuse, independent SWA, routed/shared experts, Single-Pass mHC, Engram, optional FP4 main KV, and a separately trained DSpark-style drafter. See [architecture and supported boundaries](docs/scaled-v41.md). The original GPT remains the default; giant-model weights and giant-model quality are not implied.
+
 ## Time-to-GPT-2 Leaderboard
 
 Presently, the main focus of development is on tuning the pretraining stage, which takes the most amount of compute. Inspired by the modded-nanogpt repo and to incentivise progress and community collaboration, nanochat maintains a leaderboard for a "GPT-2 speedrun", which is the wall-clock time required to train a nanochat model to GPT-2 grade capability, as measured by the DCLM CORE score. The [runs/speedrun.sh](runs/speedrun.sh) script always reflects the reference way to train GPT-2 grade model and talk to it. The current leaderboard looks as follows:

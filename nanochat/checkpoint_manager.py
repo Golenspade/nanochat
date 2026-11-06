@@ -93,7 +93,9 @@ def build_model(checkpoint_dir, step, device, phase):
     # Hack: fix torch compile issue, which prepends all keys with _orig_mod.
     model_data = {k.removeprefix("_orig_mod."): v for k, v in model_data.items()}
     model_config_kwargs = meta_data["model_config"]
-    _patch_missing_config_keys(model_config_kwargs)
+    is_v41 = model_config_kwargs.get("architecture") == "deepseek_v41"
+    if not is_v41:
+        _patch_missing_config_keys(model_config_kwargs)
 
     # Load the Tokenizer before building model so we can detect vocab mismatch
     tokenizer = get_tokenizer()
@@ -113,10 +115,14 @@ def build_model(checkpoint_dir, step, device, phase):
         )
 
     log0(f"Building model with config: {model_config_kwargs}")
-    model_config = GPTConfig(**model_config_kwargs)
-    _patch_missing_keys(model_data, model_config)
+    if is_v41:
+        from nanochat.deepseek_v41 import V41Config, DeepSeekV41
+        model_config, Model = V41Config(**model_config_kwargs), DeepSeekV41
+    else:
+        model_config, Model = GPTConfig(**model_config_kwargs), GPT
+        _patch_missing_keys(model_data, model_config)
     with torch.device("meta"):
-        model = GPT(model_config)
+        model = Model(model_config)
     # Load the model state
     model.to_empty(device=device)
     model.init_weights() # note: this is dumb, but we need to init the rotary embeddings. TODO: fix model re-init
@@ -134,7 +140,7 @@ def build_model(checkpoint_dir, step, device, phase):
                 num_special = len(tokenizer.get_special_tokens())
                 old_mergeable = checkpoint_vocab_size - num_special
                 new_mergeable = tokenizer_vocab_size - num_special
-                if "transformer.wte.weight" in k or "lm_head.weight" in k or ("value_embeds" in k and ".weight" in k):
+                if k == "embedding.weight" or "transformer.wte.weight" in k or "lm_head.weight" in k or ("value_embeds" in k and ".weight" in k):
                     # mergeable tokens: same IDs in both tokenizers, direct index copy
                     new_state[k][:old_mergeable].copy_(v[:old_mergeable])
                     # special tokens: remap by position in SPECIAL_TOKENS list

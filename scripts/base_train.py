@@ -53,6 +53,12 @@ parser.add_argument("--head-dim", type=int, default=128, help="target head dimen
 parser.add_argument("--max-seq-len", type=int, default=2048, help="max context length")
 parser.add_argument("--window-pattern", type=str, default="SSSL", help="sliding window pattern tiled across layers: L=full, S=half context (e.g. 'SSL')")
 parser.add_argument("--kv-share-pattern", type=str, default="F", help="KV sharing pattern tiled across layers: F=produce, R=reuse (e.g. 'FR')")
+parser.add_argument("--architecture", choices=["gpt", "deepseek_v41"], default="gpt")
+parser.add_argument("--v41-window-size", type=int, default=32)
+parser.add_argument("--v41-topk", type=int, default=8)
+parser.add_argument("--v41-experts", type=int, default=8)
+parser.add_argument("--v41-fp4-cache", action="store_true")
+parser.add_argument("--no-compile", action="store_true", help="eager reference execution (recommended for scaled V41)")
 # Training horizon (only one used, in order of precedence)
 parser.add_argument("--num-iterations", type=int, default=-1, help="explicit number of optimization steps (-1 = disable)")
 parser.add_argument("--target-flops", type=float, default=-1.0, help="calculate num_iterations to reach target_flops (-1 = disable)")
@@ -105,7 +111,9 @@ wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat", 
 # Flash Attention status
 from nanochat.flash_attention import USE_FA3
 using_fa3 = USE_FA3
-if using_fa3:
+if args.architecture == "deepseek_v41":
+    print0("V41 reference backend: portable gathered sparse attention (PyTorch), single GPU optimizer.")
+elif using_fa3:
     print0("✓ Using Flash Attention 3 (Hopper GPU detected), efficient, new and awesome.")
 else:
     print0("!" * 80)
@@ -136,14 +144,24 @@ def build_model_meta(depth):
     base_dim = depth * args.aspect_ratio
     model_dim = ((base_dim + args.head_dim - 1) // args.head_dim) * args.head_dim
     num_heads = model_dim // args.head_dim
-    config = GPTConfig(
-        sequence_len=args.max_seq_len, vocab_size=vocab_size,
-        n_layer=depth, n_head=num_heads, n_kv_head=num_heads, n_embd=model_dim,
-        window_pattern=args.window_pattern,
-        kv_share_pattern=args.kv_share_pattern,
-    )
+    if args.architecture == "deepseek_v41":
+        from nanochat.deepseek_v41 import V41Config, DeepSeekV41
+        if args.fp8:
+            raise ValueError("V41 reference uses explicit BF16/FP4-QAT; --fp8 is not supported")
+        config = V41Config(sequence_len=args.max_seq_len, vocab_size=vocab_size, n_layer=depth,
+            n_embd=model_dim, n_head=num_heads, head_dim=args.head_dim,
+            q_rank=model_dim // 2, o_rank=model_dim // 2, expert_dim=model_dim // 2,
+            o_groups=2 if num_heads % 2 == 0 else 1,
+            window_size=args.v41_window_size, index_topk=args.v41_topk,
+            n_experts=args.v41_experts, fp4_cache=args.v41_fp4_cache)
+        Model = DeepSeekV41
+    else:
+        config = GPTConfig(sequence_len=args.max_seq_len, vocab_size=vocab_size,
+            n_layer=depth, n_head=num_heads, n_kv_head=num_heads, n_embd=model_dim,
+            window_pattern=args.window_pattern, kv_share_pattern=args.kv_share_pattern)
+        Model = GPT
     with torch.device("meta"):
-        model_meta = GPT(config)
+        model_meta = Model(config)
     return model_meta
 
 # Build the model, move to device, init the weights
@@ -162,9 +180,13 @@ resuming = args.resume_from_step != -1
 if resuming:
     print0(f"Resuming optimization from step {args.resume_from_step}")
     model_data, optimizer_data, meta_data = load_checkpoint(checkpoint_dir, args.resume_from_step, device, load_optimizer=True, rank=ddp_rank)
-    checkpoint_config = GPTConfig(**meta_data["model_config"])
-    if checkpoint_config.kv_cache_layer_map() != model_config.kv_cache_layer_map():
+    if meta_data["model_config"].get("architecture", "gpt") != args.architecture:
+        raise ValueError("Cannot resume a different model architecture")
+    checkpoint_config = type(model_config)(**meta_data["model_config"])
+    if args.architecture == "gpt" and checkpoint_config.kv_cache_layer_map() != model_config.kv_cache_layer_map():
         raise ValueError("Cannot resume with a different --kv-share-pattern; use the checkpoint's sharing pattern")
+    if args.architecture == "deepseek_v41" and checkpoint_config != model_config:
+        raise ValueError("V41 resume requires the exact checkpoint configuration")
     model.load_state_dict(model_data, strict=True, assign=True)
     del model_data # free up this memory after the copy
 
@@ -250,7 +272,7 @@ def disable_fp8(model):
 # Compile the model
 
 orig_model = model # original, uncompiled model, for saving raw model state_dict and for inference/evaluation (because the shapes may change shape)
-model = torch.compile(model, dynamic=False) # the inputs to model will never change shape so dynamic=False is safe
+model = model if args.no_compile else torch.compile(model, dynamic=False)
 
 # -----------------------------------------------------------------------------
 # Scaling laws and muP extrapolations to determine the optimal training horizon, batch size, learning rates, weight decay.
@@ -565,6 +587,8 @@ while True:
         scaler.update()
     else:
         optimizer.step()
+    if hasattr(orig_model, "post_optimizer_step"):
+        orig_model.post_optimizer_step()
     model.zero_grad(set_to_none=True)
     train_loss_f = train_loss.item() # .item() is a CPU-GPU sync point
     synchronize()

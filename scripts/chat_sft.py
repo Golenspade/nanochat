@@ -446,6 +446,8 @@ while True:
         scaler.update()
     else:
         optimizer.step()
+    if hasattr(orig_model, "post_optimizer_step"):
+        orig_model.post_optimizer_step()
     model.zero_grad(set_to_none=True)
     synchronize()
     t1 = time.time()

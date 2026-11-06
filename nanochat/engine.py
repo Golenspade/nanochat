@@ -229,26 +229,17 @@ class Engine:
         kv_model_kwargs = {"num_heads": m.n_kv_head, "head_dim": m.n_embd // m.n_head, "num_layers": m.n_layer}
         if hasattr(m, "kv_cache_layer_map"):
             kv_model_kwargs["layer_mapping"] = m.kv_cache_layer_map()
-        kv_cache_prefill = KVCache(
-            batch_size=1,
-            seq_len=len(tokens),
-            device=device,
-            dtype=dtype,
-            **kv_model_kwargs,
-        )
+        create_cache = getattr(self.model, "create_kv_cache", None)
+        if create_cache is None:
+            create_cache = lambda batch_size, seq_len: KVCache(batch_size=batch_size, seq_len=seq_len, device=device, dtype=dtype, **kv_model_kwargs)
+        kv_cache_prefill = create_cache(batch_size=1, seq_len=len(tokens))
         ids = torch.tensor([tokens], dtype=torch.long, device=device)
         logits = self.model.forward(ids, kv_cache=kv_cache_prefill)
         logits = logits[:, -1, :].expand(num_samples, -1)  # (num_samples, vocab_size)
 
         # 2) Replicate the KV cache for each sample/row
         kv_length_hint = (len(tokens) + max_tokens) if max_tokens is not None else self.model.config.sequence_len
-        kv_cache_decode = KVCache(
-            batch_size=num_samples,
-            seq_len=kv_length_hint,
-            device=device,
-            dtype=dtype,
-            **kv_model_kwargs,
-        )
+        kv_cache_decode = create_cache(batch_size=num_samples, seq_len=kv_length_hint)
         kv_cache_decode.prefill(kv_cache_prefill)
         del kv_cache_prefill # no need to keep this memory around
 

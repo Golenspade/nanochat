@@ -1,0 +1,14 @@
+{
+  "architecture": "deepseek_v41",
+  "step": 1024,
+  "device": "cpu",
+  "deterministic_generation": true,
+  "generated_ids": [
+    669,
+    283,
+    262,
+    776
+  ],
+  "text": " time to the most",
+  "parameters": 30800080
+}
