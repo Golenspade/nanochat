@@ -273,7 +273,7 @@ class DeepSeekV41(nn.Module):
     def create_kv_cache(self, batch_size, seq_len, bounded_replay=False):
         return V41Cache(self.config, batch_size, seq_len, self.get_device(), COMPUTE_DTYPE, bounded_replay)
 
-    def forward(self, idx, targets=None, kv_cache=None, loss_reduction="mean"):
+    def forward(self, idx, targets=None, kv_cache=None, loss_reduction="mean", return_hidden=False):
         c = self.config
         start = 0 if kv_cache is None else kv_cache.get_pos()
         if kv_cache is not None:
@@ -286,7 +286,7 @@ class DeepSeekV41(nn.Module):
         pre = x.new_zeros(*idx.shape, c.hc_mult, dtype=torch.float32); pre[..., 0] = 1
         positions = torch.arange(start, start + idx.size(1), device=idx.device)
         state, auxiliary, encoder = {}, x.new_zeros(()), None
-        active_ids, active_history = idx, history
+        active_ids, active_history, features = idx, history, []
         for i, block in enumerate(self.blocks):
             if i == c.n_layer // 2:
                 encoder = SinglePassMHC.read(x, pre)
@@ -297,6 +297,8 @@ class DeepSeekV41(nn.Module):
                     x, pre, positions = x[:, -tail:], pre[:, -tail:], positions[-tail:]
             if str(i) in self.engram:
                 x = self.engram[str(i)](x, active_ids, active_history)
+            if return_hidden and i >= c.n_layer - 3:
+                features.append(x.mean(2))
             source = encoder if i >= c.n_layer // 2 else None
             x, pre, loss = block(x, pre, positions, state, kv_cache, source)
             auxiliary = auxiliary + loss
@@ -306,7 +308,7 @@ class DeepSeekV41(nn.Module):
             kv_cache.history = torch.cat([previous, idx], 1)[:, -3:].clone()
             kv_cache.pos += idx.size(1)
         if targets is None:
-            return logits
+            return (logits, torch.cat([h[:, -logits.size(1):] for h in features], -1)) if return_hidden else logits
         loss = F.cross_entropy(logits.reshape(-1, c.vocab_size), targets[:, -logits.size(1):].reshape(-1), ignore_index=-1, reduction=loss_reduction)
         return loss + c.index_aux_weight * auxiliary if self.training and loss_reduction == "mean" else loss
 

@@ -161,3 +161,32 @@ def test_checkpoint_loader_routes_architecture(tmp_path, monkeypatch):
     ids = torch.tensor([[1, 2, 3, 4]])
     with torch.inference_mode():
         torch.testing.assert_close(restored(ids), m(ids), atol=0, rtol=0)
+
+
+def test_dspark_parallel_drafts_and_frozen_backbone():
+    from nanochat.v41_dspark import DSparkDrafter
+    m = model().eval()
+    ids = torch.randint(0, 128, (2, 16))
+    with torch.no_grad():
+        teacher, features = m(ids, return_hidden=True)
+    draft = DSparkDrafter(m, block_size=3, markov_rank=8)
+    draft.init_weights()
+    targets = ids[:, 9:12]
+    loss = draft.training_loss(features[:, :8], ids[:, 8], 8, targets, teacher[:, 8:11])
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert all(p.grad is None for p in m.parameters())
+    assert draft.markov.weight.grad.abs().sum() > 0
+    result = draft(features[:, :8], ids[:, 8], 8)
+    assert result["tokens"].shape == (2, 3)
+    lengths = draft.verification_length(result["confidence"], 1., [2., 3., 4.])
+    assert ((lengths >= 1) & (lengths <= 3)).all()
+
+
+def test_engram_normalized_token_map():
+    from nanochat.v41_components import build_token_map
+    class Tokenizer:
+        def get_vocab_size(self): return 4
+        def decode(self, ids): return [" The", "THE", "thé", " "][ids[0]]
+    mapping = build_token_map(Tokenizer())
+    assert mapping.tolist() == [0, 0, 0, 1]
