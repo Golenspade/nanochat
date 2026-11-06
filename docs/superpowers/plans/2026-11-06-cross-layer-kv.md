@@ -60,4 +60,4 @@ parser.add_argument("--kv-share-pattern", type=str, default="F", help="KV sharin
 - [x] Test old metadata without the new field, a new shared checkpoint round trip, optimizer parameter coverage, Engine sampling, and compiled training gradients.
 - [x] Document report section/page provenance, differences from CSA2, cache formula `2 * slots * batch * capacity * kv_heads * head_dim * element_size`, fresh-training requirements, and controlled d12 experiments.
 - [x] Run the non-slow test suite and review the complete diff: 61 passed, 12 FA3/Hopper skips. Compare default F with the original model: state keys, seeded weights, and full-sequence logits are bitwise identical.
-- [ ] Commit only scoped files, push the branch, and open a PR targeting `chinese-support`. Verify the remote PR head/base and status.
+- [x] Commit only scoped files, push the branch, and open a PR targeting `chinese-support`. Verified PR [#1](https://github.com/Golenspade/nanochat/pull/1): open, not merged, head `codex/deepseek-cross-layer-kv`, base `chinese-support`.
