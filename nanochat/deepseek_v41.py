@@ -47,6 +47,7 @@ class V41Config:
     enable_engram: bool = True
     engram_dim: int = 16
     engram_buckets: int = 257
+    engram_heads: int = 2
     fp4_cache: bool = False
     window_pattern: str = "L"  # pipeline metadata compatibility; V41 uses window_size
 
@@ -179,7 +180,7 @@ class CSA2(nn.Module):
         loss = F.kl_div(student, teacher, reduction="none").sum(-1)
         return (loss * visible.any(-1)).mean()
 
-    def forward(self, x, positions, state, cache=None, global_source=None):
+    def forward(self, x, positions, state, cache=None, global_source=None, global_skip=0):
         c = self.config
         theta = 10000 if self.mode == "S" else 40000
         qr = self.q_norm(self.q_a(x))
@@ -194,7 +195,8 @@ class CSA2(nn.Module):
         values = gather(local, local_ids)
         auxiliary = x.new_zeros(())
         if self.mode == "F":
-            main, index = self.produce(x if global_source is None else global_source, cache)
+            source = x if global_source is None else global_source
+            main, index = self.produce(source[:, global_skip:], cache)
             state.clear(); state.update(main=main, index=index, owner=self.layer)
         if self.mode in "FI":
             auxiliary = self.select(x, qr, q, positions, state)
@@ -222,9 +224,9 @@ class V41Block(nn.Module):
         self.attn = CSA2(c, layer)
         self.ffn = RoutedMoE(c.n_embd, c.expert_dim, c.n_experts, c.experts_per_token)
 
-    def forward(self, x, pre, positions, state, cache=None, global_source=None):
+    def forward(self, x, pre, positions, state, cache=None, global_source=None, global_skip=0):
         next_pre, post, comb = self.attn_mix.coefficients(x)
-        output, aux = self.attn(self.attn_norm(self.attn_mix.read(x, pre)), positions, state, cache, global_source)
+        output, aux = self.attn(self.attn_norm(self.attn_mix.read(x, pre)), positions, state, cache, global_source, global_skip)
         x = self.attn_mix.write(x, output, post, comb)
         final_pre, post, comb = self.ffn_mix.coefficients(x)
         output = self.ffn(self.ffn_norm(self.ffn_mix.read(x, next_pre)))
@@ -238,7 +240,7 @@ class DeepSeekV41(nn.Module):
         self.embedding = nn.Embedding(config.vocab_size, config.n_embd)
         self.blocks = nn.ModuleList([V41Block(config, i) for i in range(config.n_layer)])
         layers = sorted({1, max(2, config.n_layer * 14 // 40)}) if config.enable_engram else []
-        self.engram = nn.ModuleDict({str(i): Engram(config.n_embd, config.hc_mult, config.engram_dim, config.engram_buckets, vocab_size=config.vocab_size, hash_seed=i) for i in layers})
+        self.engram = nn.ModuleDict({str(i): Engram(config.n_embd, config.hc_mult, config.engram_dim, config.engram_buckets, heads=config.engram_heads, vocab_size=config.vocab_size, hash_seed=i) for i in layers})
         self.norm, self.lm_head = RMSNorm(config.n_embd), Linear(config.n_embd, config.vocab_size, bias=False)
 
     @torch.no_grad()
@@ -273,15 +275,21 @@ class DeepSeekV41(nn.Module):
     def create_kv_cache(self, batch_size, seq_len, bounded_replay=False):
         return V41Cache(self.config, batch_size, seq_len, self.get_device(), COMPUTE_DTYPE, bounded_replay)
 
-    def forward(self, idx, targets=None, kv_cache=None, loss_reduction="mean", return_hidden=False):
+    def forward(self, idx, targets=None, kv_cache=None, loss_reduction="mean", return_hidden=False, _replay=None):
         c = self.config
         start = 0 if kv_cache is None else kv_cache.get_pos()
+        if _replay is not None:
+            start = _replay[0]
         if kv_cache is not None:
             if torch.is_grad_enabled() or kv_cache.config != c:
                 raise ValueError("Request cache is inference-only and must match the model config")
             if start + idx.size(1) > kv_cache.max_seq_len:
                 raise ValueError("Cache capacity exceeded")
+            if kv_cache.pos and not kv_cache.local and _replay is None:
+                raise ValueError("Missing SWA state: restore it with replay_prefix before decoding")
         history = None if kv_cache is None else kv_cache.history
+        if _replay is not None:
+            history = _replay[2]
         x = self.embedding(idx).to(COMPUTE_DTYPE).unsqueeze(2).expand(-1, -1, c.hc_mult, -1)
         pre = x.new_zeros(*idx.shape, c.hc_mult, dtype=torch.float32); pre[..., 0] = 1
         positions = torch.arange(start, start + idx.size(1), device=idx.device)
@@ -290,8 +298,10 @@ class DeepSeekV41(nn.Module):
         for i, block in enumerate(self.blocks):
             if i == c.n_layer // 2:
                 encoder = SinglePassMHC.read(x, pre)
-                if kv_cache is not None and kv_cache.bounded_replay and start == 0:
+                if kv_cache is not None and kv_cache.bounded_replay and (start == 0 or _replay is not None or idx.size(1) > c.window_size):
                     tail = min(c.window_size, idx.size(1))
+                    for j in range(c.n_layer // 2, c.n_layer):
+                        kv_cache.local.pop(j, None)
                     prefix = idx[:, :-tail] if history is None else torch.cat([history, idx[:, :-tail]], 1)
                     active_history, active_ids = prefix[:, -3:], idx[:, -tail:]
                     x, pre, positions = x[:, -tail:], pre[:, -tail:], positions[-tail:]
@@ -300,17 +310,36 @@ class DeepSeekV41(nn.Module):
             if return_hidden and i >= c.n_layer - 3:
                 features.append(x.mean(2))
             source = encoder if i >= c.n_layer // 2 else None
-            x, pre, loss = block(x, pre, positions, state, kv_cache, source)
+            x, pre, loss = block(x, pre, positions, state, kv_cache, source, 0 if _replay is None else _replay[1])
             auxiliary = auxiliary + loss
         logits = self.lm_head(self.norm(SinglePassMHC.read(x, pre))).float()
         if kv_cache is not None:
             previous = idx[:, :0] if history is None else history
             kv_cache.history = torch.cat([previous, idx], 1)[:, -3:].clone()
-            kv_cache.pos += idx.size(1)
+            kv_cache.pos = start + idx.size(1)
         if targets is None:
             return (logits, torch.cat([h[:, -logits.size(1):] for h in features], -1)) if return_hidden else logits
         loss = F.cross_entropy(logits.reshape(-1, c.vocab_size), targets[:, -logits.size(1):].reshape(-1), ignore_index=-1, reduction=loss_reduction)
         return loss + c.index_aux_weight * auxiliary if self.training and loss_reduction == "mean" else loss
+
+    @torch.inference_mode()
+    def replay_prefix(self, cache, prefix_ids, suffix_ids):
+        """Approximate missing encoder/decoder SWA from only the last window.
+
+        Existing global entries and incomplete compression groups are retained;
+        only uncached suffix tokens append global KV. Prefix IDs are supplied by
+        the caller, so their token history need not be stored as KV on disk.
+        """
+        if cache.get_pos() != prefix_ids.size(1) or prefix_ids.size(0) != cache.batch_size:
+            raise ValueError("Prefix IDs must match the cached prefix position and batch")
+        tail = min(self.config.window_size, prefix_ids.size(1))
+        if tail == 0:
+            return self(suffix_ids, kv_cache=cache)
+        start = prefix_ids.size(1) - tail
+        history = prefix_ids[:, max(0, start - 3):start]
+        cache.drop_local()
+        combined = torch.cat([prefix_ids[:, -tail:], suffix_ids], 1)
+        return self(combined, kv_cache=cache, _replay=(start, tail, history))
 
     @torch.no_grad()
     def post_optimizer_step(self):

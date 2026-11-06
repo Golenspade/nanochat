@@ -190,3 +190,21 @@ def test_engram_normalized_token_map():
         def decode(self, ids): return [" The", "THE", "thé", " "][ids[0]]
     mapping = build_token_map(Tokenizer())
     assert mapping.tolist() == [0, 0, 0, 1]
+
+
+@pytest.mark.parametrize("fp4", [False, True])
+def test_encoder_bounded_replay_does_not_overwrite_global_prefix(fp4):
+    m = model(fp4_cache=fp4).eval()
+    prefix, suffix = torch.randint(0,128,(1,11)), torch.randint(0,128,(1,3))
+    c = m.create_kv_cache(1, 40, bounded_replay=True)
+    with torch.inference_mode():
+        m(prefix, kv_cache=c)
+        saved = {owner: data[:, :c.global_counts[owner]].clone() for owner,data in c.globals.items()}
+        c.drop_local()
+        with pytest.raises(ValueError, match="Missing SWA"):
+            m(suffix, kv_cache=c)
+        result = m.replay_prefix(c, prefix, suffix)
+        assert torch.isfinite(result).all() and c.get_pos() == 14
+        assert c.global_counts == {1:7, 4:14}
+        for owner, old in saved.items():
+            torch.testing.assert_close(c.globals[owner][:,:old.size(1)],old,atol=0,rtol=0)

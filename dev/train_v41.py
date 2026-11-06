@@ -56,6 +56,8 @@ def main():
     args = p.parse_args()
     if args.width % 64 or min(args.steps, args.seq_len, args.batch_size, args.val_batches) < 1:
         p.error("width must align to 64 and training sizes must be positive")
+    if args.dspark_steps and args.seq_len < 32:
+        p.error("DSpark acceptance needs sequence length >= 32")
     _, _, _, _, device = compute_init(args.device)
     torch.manual_seed(args.seed); torch.set_num_threads(4)
     corpus = torch.load(args.corpus, weights_only=False, map_location="cpu")

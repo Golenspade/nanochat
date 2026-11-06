@@ -95,7 +95,7 @@ class SinglePassMHC(nn.Module):
         nn.init.normal_(self.fn, std=0.01 / math.sqrt(self.fn.size(-1)))
         self.base.zero_(); self.scale.fill_(1.)
         n = self.streams
-        self.base[:n].fill_(math.log(1 / max(n - 1, 1)))
+        self.base[:n].fill_(math.log(1 / (n - 1)) if n > 1 else math.log(1e6))
         self.base[2*n:].view(n, n).copy_(torch.eye(n, device=self.base.device) * 4)
 
 

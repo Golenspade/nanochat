@@ -30,6 +30,10 @@ class V41Cache:
     def get_pos(self):
         return self.pos
 
+    def drop_local(self):
+        """Simulate a persistent global-prefix hit with no retained SWA states."""
+        self.local.clear()
+
     def append_global(self, owner, main, index):
         start = self.global_counts[owner]
         end = start + main.size(1)
