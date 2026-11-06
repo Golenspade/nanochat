@@ -298,6 +298,8 @@ for step in range(num_steps):
     for group in optimizer.param_groups:
         group["lr"] = group["initial_lr"] * lrm
     optimizer.step()
+    if hasattr(model, "post_optimizer_step"):
+        model.post_optimizer_step()
     model.zero_grad(set_to_none=True)
     wandb_run.log({
         "step": step,
