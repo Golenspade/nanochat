@@ -54,6 +54,7 @@ def main():
     p.add_argument("--dspark-steps", type=int, default=32)
     p.add_argument("--device", choices=["cpu", "cuda"], default="cuda")
     args = p.parse_args()
+    code_commit = subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()
     if args.width % 64 or min(args.steps, args.seq_len, args.batch_size, args.val_batches) < 1:
         p.error("width must align to 64 and training sizes must be positive")
     if args.dspark_steps and args.seq_len < 32:
@@ -125,6 +126,18 @@ def main():
         generated = list(restored.generate(ids[0].tolist(), max_tokens=24, temperature=0))
         memory = dict(storage_bytes=exact.storage_bytes(), global_entries=exact.global_counts,
                       local_tokens={str(k): v.size(1) for k,v in exact.local.items()})
+        prefix_cache = restored.create_kv_cache(1, 128, bounded_replay=True)
+        restored(ids[:, :24], kv_cache=prefix_cache)
+        old = {owner: data[:, :prefix_cache.global_counts[owner]].clone() for owner,data in prefix_cache.globals.items()}
+        before_tokens = prefix_cache.layer_tokens.copy()
+        prefix_cache.drop_local()
+        prefix_output = restored.replay_prefix(prefix_cache, ids[:, :24], ids[:, 24:])
+        for owner, value in old.items():
+            torch.testing.assert_close(prefix_cache.globals[owner][:, :value.size(1)], value, atol=0, rtol=0)
+        prefix_replay = dict(global_prefix_unchanged=True, final_position=prefix_cache.get_pos(),
+            encoder_tokens_replayed=prefix_cache.layer_tokens[0]-before_tokens[0],
+            decoder_tokens_replayed=prefix_cache.layer_tokens[config.n_layer//2]-before_tokens[config.n_layer//2],
+            mean_abs_logit_error=(prefix_output-original[:, -prefix_output.size(1):]).abs().mean().item())
     draft_result = None
     if args.dspark_steps:
         draft = DSparkDrafter(restored, block_size=5, markov_rank=16).to(device); draft.init_weights()
@@ -148,7 +161,7 @@ def main():
         torch.save(draft.state_dict(), args.output/"dspark.pt")
         draft_result = dict(steps=args.dspark_steps, losses=draft_history, backbone_gradients_none=True,
                             note="Drafter/Markov/confidence trained separately; no speculative speed claim")
-    result = dict(config=asdict(config), code_commit=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip(),
+    result = dict(config=asdict(config), code_commit=code_commit,
         seed=args.seed, torch=torch.__version__, gpu=torch.cuda.get_device_name() if args.device=="cuda" else "cpu",
         corpus_sha256=hashlib.sha256(args.corpus.read_bytes()).hexdigest(),
         parameters=model.num_scaling_params(), initial_validation=initial, final_validation=final,
@@ -157,7 +170,7 @@ def main():
         cache_logit_max_abs_error=parity, bounded_replay_mean_abs_error=replay_error,
         bounded_replay_decoder_tokens=replay.layer_tokens[config.n_layer//2],
         generated_ids=generated, generated_text=None if tokenizer is None else tokenizer.decode(generated),
-        cache=memory, dspark=draft_result)
+        cache=memory, encoder_prefix_replay=prefix_replay, dspark=draft_result)
     (args.output/"result.json").write_text(json.dumps(result, indent=2)+"\n")
     print('RESULT',json.dumps({"initial_bpb":initial["bpb"],"final_bpb":final["bpb"],"parity":parity,"seconds":training_seconds}),flush=True)
     compute_cleanup()
